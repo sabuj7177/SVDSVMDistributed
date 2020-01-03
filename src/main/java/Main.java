@@ -59,10 +59,10 @@ import static java.lang.Math.floor;
 public class Main {
 
     private static int numOfClusters = 4;
-    private static int totalData = 1000;
+    private static int totalData = 4000;
     private static int numOfPartialData;
     private static int testrow = 1000;
-    private static int nCols = 40;
+    private static int nCols = 201;
     private static int thresholdSpark = 10; //If in case data is not evenly distributed
     private static int partitionCounter;
     private static int rowNumberCount = 0;
@@ -83,9 +83,9 @@ public class Main {
     private static double threshold = 0.001;
     private static int maxIteration = 100;
     private static double optStepSize;
-    private static String trainDataPath = "src/main/resources/a9a_1000/a9a_train_1000_40_with_label.txt";
-    private static String testDataPath = "src/main/resources/a9a_1000/a9a_test_1000_40.txt";
-    private static String testLabelPath = "src/main/resources/a9a_1000/a9a_test_Label_1000.txt";
+    private static String trainDataPath = "src/main/resources/rcv1/rcv1_train_4000_200_with_meka.txt";
+    private static String testDataPath = "src/main/resources/rcv1/rcv1_test_1000_200.txt";
+    private static String testLabelPath = "src/main/resources/rcv1/rcv1_test_1000_200_with_label.txt";
     private static double testLabelPositive = 1.0; //Positive label of the data set
     private static double testLabelNegative = -1.0; //Negative label of the data set
 
@@ -554,7 +554,7 @@ public class Main {
         JavaRDD<String> testDataRDD = sc.textFile(testDataPath);
         JavaRDD<Matrix> testData = testDataRDD.map(new Function<String, Matrix>() {
                                                          public Matrix call(String s) {
-                                                             String[] singleRecord = s.trim().split(",");
+                                                             String[] singleRecord = s.trim().split(" ");
                                                              double[][] singleRecordMat = new double[1][nCols];
                                                              for (int i = 0; i < nCols; i++) {
                                                                  singleRecordMat[0][i] = Double.parseDouble(singleRecord[i]);
