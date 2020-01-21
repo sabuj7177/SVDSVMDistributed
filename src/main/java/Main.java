@@ -41,7 +41,7 @@ public class Main {
     private static double learnRate = 0.2;
     private static double C = 1.0;
     private static double threshold = 0.001;
-    private static int maxIteration = 100;
+    private static int maxIteration = 10;
     private static double optStepSize;
     private static String trainDataPath = "src/main/resources/rcv1/rcv1_train_4000_200_with_meka.txt";
     private static String testDataPath = "src/main/resources/rcv1/rcv1_test_1000_200.txt";
@@ -472,43 +472,22 @@ public class Main {
         Logger.getLogger("org").setLevel(Level.OFF);
         Logger.getLogger("akka").setLevel(Level.OFF);
 
-        /*double[][] vals = {{1,2,3},{4,5,6},{7,8,9},{10,11,12}};
-        Matrix A = new Matrix(vals);
-        QRHolder qq = HouseHolderDecomposition(vals);
-        print(qq.getReflector());*/
-
         xAcc = sc.accumulator(new Matrix(totalData, 1), new MatrixAccumulatorParam());
 
-            // Load the training data into a Spark RDD, which is a distributed representation of each line of text
-            //This process does not split data evenly.
-            JavaRDD<String> trainingDataRDD = sc.textFile(trainDataPath, numOfClusters);
-            JavaRDD<Matrix> trainingData = trainingDataRDD.map(new Function<String, Matrix>() {
-                                                                      public Matrix call(String s) {
-                                                                          String[] sarray = s.trim().split(" ");
-                                                                          double[][] values = new double[1][nCols];
-                                                                          for (int i = 0; i < nCols; i++) {
-                                                                              values[0][i] = Double.parseDouble(sarray[i]);
-                                                                          }
-                                                                          return new Matrix(values);
+        // Load the training data into a Spark RDD, which is a distributed representation of each line of text
+        //This process does not split data evenly.
+        JavaRDD<String> trainingDataRDD = sc.textFile(trainDataPath, numOfClusters);
+        JavaRDD<Matrix> trainingData = trainingDataRDD.map(new Function<String, Matrix>() {
+                                                                  public Matrix call(String s) {
+                                                                      String[] sarray = s.trim().split(" ");
+                                                                      double[][] values = new double[1][nCols];
+                                                                      for (int i = 0; i < nCols; i++) {
+                                                                          values[0][i] = Double.parseDouble(sarray[i]);
                                                                       }
+                                                                      return new Matrix(values);
                                                                   }
-            ).persist(StorageLevel.MEMORY_ONLY_SER());
-
-        //Convert each record in a matrix and load the training data into a list 
-        /*JavaRDD<String> trainingDataRDD = sc.textFile(trainDataPath);
-        List<Matrix> trainDataList = new ArrayList<>();
-        for (String line : trainingDataRDD.collect()) {
-            String[] singleRecord = line.trim().split(" ");
-            double[][] singleRecordMat = new double[1][nCols];
-            for (int i = 0; i < nCols; i++) {
-                singleRecordMat[0][i] = Double.parseDouble(singleRecord[i]);
-            }
-            trainDataList.add(new Matrix(singleRecordMat));
-        }
-        //Now we have all records in trainDataList
-
-        //Apply parallelize method to split data evenly
-        JavaRDD<Matrix> trainingData = sc.parallelize(trainDataList, numOfClusters);*/
+                                                              }
+        ).persist(StorageLevel.MEMORY_ONLY_SER());
 
         // Load the test data into a Spark RDD, here test data is not multiplied by labels
         JavaRDD<String> testDataRDD = sc.textFile(testDataPath);
@@ -544,6 +523,13 @@ public class Main {
         rowNumberCount = 0;
         for (double line : testLabel.take(testrow)) {
             testlabelmat.set(rowNumberCount, 0, line);
+            rowNumberCount++;
+        }
+
+        Matrix trainDatamat = new Matrix(totalData,nCols);
+        rowNumberCount = 0;
+        for (Matrix line : trainingData.take(totalData)) {
+            trainDatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
             rowNumberCount++;
         }
 
@@ -699,6 +685,15 @@ public class Main {
         }
         Matrix alphatotalmat = alphaList.value();
         TestData(alphatotalmat,finalR,testdatamat,testlabelmat);
+        //Matrix support_vectors = Dist_QX(alphatotalmat);
+        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
+        Matrix transposeweightmat = weightmat.transpose();
+        Matrix result = transposeweightmat.times(trainDatamat.transpose());
+        for(int i=0;i<result.getColumnDimension();i++){
+            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
+            System.out.println(i+" "+result.get(0,i));
+            //}
+        }
 
 
 
