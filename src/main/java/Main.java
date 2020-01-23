@@ -20,7 +20,7 @@ import static java.lang.Math.floor;
 
 public class Main {
 
-    //private static int numOfClusters = 4;
+    private static int numOfClusters = 5;
     //private static int totalData = 4000;
     private static int numOfPartialData;
     private static int testrow = 1000;
@@ -413,126 +413,98 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         numOfPartialData = 2000;
-        File firstFile = new File("src/main/resources/a9a/a9a_first_2000_40_train_meka.txt");
-        File secondFile = new File("src/main/resources/a9a/a9a_second_2000_40_train_meka.txt");
+        Scanner fileScanner;
+        Matrix[] trainMatrix = new Matrix[numOfClusters];
+        Matrix[] testMatrix = new Matrix[numOfClusters];
+        Matrix[] testLabelMatrix = new Matrix[numOfClusters];
+        SetUpHolder[] setUpHolders = new SetUpHolder[numOfClusters];
+        Matrix[] betaCapMats = new Matrix[numOfClusters];
 
-        Matrix firstMatrix = new Matrix(numOfPartialData,nCols);
-        Scanner fileScanner = new Scanner(firstFile);
-        int counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            for (int i = 0; i < nCols; i++) {
-                firstMatrix.set(counter,i,Double.parseDouble(sarray[i]));
+        for(int k=0;k<numOfClusters;k++){
+            File trainFile = new File("src/main/resources/a9a/a9a_2000_40_train_meka_"+ String.valueOf(k+1) +".txt");
+            trainMatrix[k] = new Matrix(numOfPartialData,nCols);
+            fileScanner = new Scanner(trainFile);
+            int counter = 0;
+
+            while (fileScanner.hasNextLine()){
+                String line = fileScanner.nextLine();
+                String[] sarray = line.trim().split(" ");
+                for (int i = 0; i < nCols; i++) {
+                    trainMatrix[k].set(counter,i,Double.parseDouble(sarray[i]));
+                }
+                counter++;
             }
-            counter++;
-        }
 
-        Matrix secondMatrix = new Matrix(numOfPartialData,nCols);
-        fileScanner = new Scanner(secondFile);
-        counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            for (int i = 0; i < nCols; i++) {
-                secondMatrix.set(counter,i,Double.parseDouble(sarray[i]));
+            File testFile = new File("src/main/resources/a9a/a9a_1000_40_test_meka_"+ String.valueOf(k+1) +".txt");
+            testMatrix[k] = new Matrix(testrow,nCols);
+            fileScanner = new Scanner(testFile);
+            counter = 0;
+            while (fileScanner.hasNextLine()){
+                String line = fileScanner.nextLine();
+                String[] sarray = line.trim().split(" ");
+                for (int i = 0; i < nCols; i++) {
+                    testMatrix[k].set(counter,i,Double.parseDouble(sarray[i]));
+                }
+                counter++;
             }
-            counter++;
-        }
 
-        File testFile = new File("src/main/resources/a9a/a9a_first_2000_40_test_meka.txt");
-        Matrix testMatrix = new Matrix(1000,nCols);
-        fileScanner = new Scanner(testFile);
-        counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            for (int i = 0; i < nCols; i++) {
-                testMatrix.set(counter,i,Double.parseDouble(sarray[i]));
+            File testLabelFile = new File("src/main/resources/a9a/a9a_1000_test_label_"+ String.valueOf(k+1) +".txt");
+            testLabelMatrix[k] = new Matrix(testrow,1);
+            fileScanner = new Scanner(testLabelFile);
+            counter = 0;
+            while (fileScanner.hasNextLine()){
+                String line = fileScanner.nextLine();
+                String[] sarray = line.trim().split(" ");
+                testLabelMatrix[k].set(counter,0,Double.parseDouble(sarray[0]));
+                counter++;
             }
-            counter++;
-        }
 
-        File testLabelFile = new File("src/main/resources/a9a/a9a_first_2000_test_label.txt");
-        Matrix testLabelMatrix = new Matrix(1000,nCols);
-        fileScanner = new Scanner(testLabelFile);
-        counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            testLabelMatrix.set(counter,0,Double.parseDouble(sarray[0]));
-            counter++;
+            setUpHolders[k] = DualAscentSetUp(trainMatrix[k]);
+            betaCapMats[k] = setUpHolders[k].getBetaCapMat();
         }
-
-        File testFile2 = new File("src/main/resources/a9a/a9a_second_2000_40_test_meka.txt");
-        Matrix testMatrix2 = new Matrix(1000,nCols);
-        fileScanner = new Scanner(testFile2);
-        counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            for (int i = 0; i < nCols; i++) {
-                testMatrix2.set(counter,i,Double.parseDouble(sarray[i]));
-            }
-            counter++;
-        }
-
-        File testLabelFile2 = new File("src/main/resources/a9a/a9a_second_2000_test_label.txt");
-        Matrix testLabelMatrix2 = new Matrix(1000,nCols);
-        fileScanner = new Scanner(testLabelFile2);
-        counter = 0;
-        while (fileScanner.hasNextLine()){
-            String line = fileScanner.nextLine();
-            String[] sarray = line.trim().split(" ");
-            testLabelMatrix2.set(counter,0,Double.parseDouble(sarray[0]));
-            counter++;
-        }
-
-        SetUpHolder firstSetUp = DualAscentSetUp(firstMatrix);
-        SetUpHolder secondSetUp = DualAscentSetUp(secondMatrix);
 
         Matrix prevBetacap = new Matrix(numOfPartialData,1,1.0);
-        Matrix firstBetaCapmat = firstSetUp.getBetaCapMat();
-        Matrix secondBetaCapmat = secondSetUp.getBetaCapMat();
 
         for (int it = 0; it < maxIteration; it++) {
-            AlphaBetaHolder firstHolder = AlphaBeta(firstSetUp.getF(), firstBetaCapmat, firstSetUp.geteCap());
-            AlphaBetaHolder secondHolder = AlphaBeta(secondSetUp.getF(), secondBetaCapmat, secondSetUp.geteCap());
-            Matrix firstBeta = (firstSetUp.getQ()).times(firstHolder.getBeta());
-            Matrix secondBeta = (secondSetUp.getQ()).times(secondHolder.getBeta());
-            for (int i = 0; i < firstBeta.getRowDimension(); i++) {
-                for (int j = 0; j < firstBeta.getColumnDimension(); j++) {
-                    if (firstBeta.get(i, j) < 0) {
-                        firstBeta.set(i, j, 0);
+            AlphaBetaHolder[] holders = new AlphaBetaHolder[numOfClusters];
+            Matrix[] betas = new Matrix[numOfClusters];
+            for(int k=0;k<numOfClusters;k++){
+                holders[k] = AlphaBeta(setUpHolders[k].getF(), betaCapMats[k], setUpHolders[k].geteCap());
+                betas[k] = (setUpHolders[k].getQ()).times(holders[k].getBeta());
+
+                for (int i = 0; i < betas[k].getRowDimension(); i++) {
+                    for (int j = 0; j < betas[k].getColumnDimension(); j++) {
+                        if (betas[k].get(i, j) < 0) {
+                            betas[k].set(i, j, 0);
+                        }
                     }
                 }
+
+                betaCapMats[k] = (setUpHolders[k].getQ().transpose()).times(betas[k]);
             }
 
-            for (int i = 0; i < secondBeta.getRowDimension(); i++) {
-                for (int j = 0; j < secondBeta.getColumnDimension(); j++) {
-                    if (secondBeta.get(i, j) < 0) {
-                        secondBeta.set(i, j, 0);
-                    }
-                }
+            Matrix avgBetaCapMat = betaCapMats[0];
+            for(int k=1;k<numOfClusters;k++){
+                avgBetaCapMat = avgBetaCapMat.plus(betaCapMats[k]);
             }
-
-            firstBetaCapmat = (firstSetUp.getQ().transpose()).times(firstBeta);
-            secondBetaCapmat = (secondSetUp.getQ().transpose()).times(secondBeta);
-            //betaCapmat = Dist_QtX(Betamat);
-            Matrix betaCapmat = (firstBetaCapmat.plus(secondBetaCapmat)).times(0.5);
-            Matrix diffbeta = betaCapmat.minus(prevBetacap);
+            avgBetaCapMat = avgBetaCapMat.times(1.0/numOfClusters);
+            Matrix diffbeta = avgBetaCapMat.minus(prevBetacap);
             double error = diffbeta.norm1();
             for (int i = 0; i < numOfPartialData; i++) {
-                prevBetacap.set(i, 0, betaCapmat.get(i, 0));
+                prevBetacap.set(i, 0, avgBetaCapMat.get(i, 0));
             }
-            firstBetaCapmat = betaCapmat;
-            secondBetaCapmat = betaCapmat;
+
+            for(int k=0;k<numOfClusters;k++){
+                betaCapMats[k] = avgBetaCapMat;
+            }
             System.out.println("############################Here is iteration " + it + "###############");
             System.out.println("this is error " + error);
 
             if(it%5==0){
-                TestData(firstHolder.getAlpha(),(firstSetUp.getR()).getMatrix(0, nCols - 1, 0, nCols - 1),testMatrix,testLabelMatrix);
-                TestData(secondHolder.getAlpha(),(secondSetUp.getR()).getMatrix(0, nCols - 1, 0, nCols - 1),testMatrix2,testLabelMatrix2);
+                for(int k=0;k<numOfClusters;k++){
+                    System.out.println("############### Cluster " + String.valueOf(k+1) + "###############");
+                    TestData(holders[k].getAlpha(),(setUpHolders[k].getR()).getMatrix(0, nCols - 1, 0, nCols - 1),testMatrix[k],testLabelMatrix[k]);
+                }
             }
 
             if (error < threshold) {

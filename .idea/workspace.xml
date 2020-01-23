@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="7fc17580-fda4-4167-8e8d-747acc89f57e" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/src/main/java/SetUpHolder.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/Main.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/Main.java" afterDir="false" />
     </list>
@@ -24,35 +23,22 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="198">
-              <caret line="531" lean-forward="true" selection-start-line="531" selection-end-line="531" />
+            <state relative-caret-position="-3309">
+              <caret line="22" column="40" selection-start-line="22" selection-start-column="40" selection-end-line="22" selection-end-column="40" />
               <folding>
                 <element signature="imports" expanded="true" />
-                <element signature="method#LocalQtX#0;class#Main#0" />
-                <element signature="method#LocalQX#0;class#Main#0" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/src/main/java/SetUpHolder.java">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="132">
-              <caret line="17" column="12" selection-start-line="17" selection-start-column="12" selection-end-line="17" selection-end-column="12" />
-              <folding>
-                <element signature="e#603#604#0" expanded="true" />
-                <element signature="e#636#637#0" expanded="true" />
-                <element signature="e#688#689#0" expanded="true" />
-                <element signature="e#732#733#0" expanded="true" />
-                <element signature="e#763#764#0" expanded="true" />
-                <element signature="e#790#791#0" expanded="true" />
-                <element signature="e#830#831#0" expanded="true" />
-                <element signature="e#862#863#0" expanded="true" />
-                <element signature="e#890#891#0" expanded="true" />
-                <element signature="e#914#915#0" expanded="true" />
-                <element signature="e#948#949#0" expanded="true" />
-                <element signature="e#969#970#0" expanded="true" />
+                <element signature="e#2334#2715#0" />
+                <element signature="e#2721#3061#0" />
+                <element signature="e#3067#3339#0" />
+                <element signature="e#3345#3606#0" />
+                <element signature="e#3612#6319#0" />
+                <element signature="e#6325#7846#0" />
+                <element signature="e#7852#8376#0" />
+                <element signature="e#8378#8433#0" />
+                <element signature="e#10728#11254#0" />
+                <element signature="e#11256#11310#0" />
+                <element signature="e#13566#15354#0" />
+                <element signature="e#15360#16510#0" />
               </folding>
             </state>
           </provider>
@@ -86,7 +72,7 @@
   <component name="ProjectCodeStyleSettingsMigration">
     <option name="version" value="1" />
   </component>
-  <component name="ProjectFrameBounds" extendedState="6">
+  <component name="ProjectFrameBounds" extendedState="7">
     <option name="x" value="-8" />
     <option name="y" value="-8" />
     <option name="width" value="1750" />
@@ -211,7 +197,7 @@
   <component name="ToolWindowManager">
     <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.15884861" />
+      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.16204691" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Image Layers" order="2" />
       <window_info id="Designer" order="3" />
@@ -308,12 +294,22 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="198">
-          <caret line="531" lean-forward="true" selection-start-line="531" selection-end-line="531" />
+        <state relative-caret-position="-3309">
+          <caret line="22" column="40" selection-start-line="22" selection-start-column="40" selection-end-line="22" selection-end-column="40" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="method#LocalQtX#0;class#Main#0" />
-            <element signature="method#LocalQX#0;class#Main#0" />
+            <element signature="e#2334#2715#0" />
+            <element signature="e#2721#3061#0" />
+            <element signature="e#3067#3339#0" />
+            <element signature="e#3345#3606#0" />
+            <element signature="e#3612#6319#0" />
+            <element signature="e#6325#7846#0" />
+            <element signature="e#7852#8376#0" />
+            <element signature="e#8378#8433#0" />
+            <element signature="e#10728#11254#0" />
+            <element signature="e#11256#11310#0" />
+            <element signature="e#13566#15354#0" />
+            <element signature="e#15360#16510#0" />
           </folding>
         </state>
       </provider>
