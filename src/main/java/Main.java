@@ -471,6 +471,14 @@ public class Main {
             for(int k=0;k<numOfClusters;k++){
                 holders[k] = AlphaBeta(setUpHolders[k].getF(), betaCapMats[k], setUpHolders[k].geteCap());
                 betas[k] = (setUpHolders[k].getQ()).times(holders[k].getBeta());
+
+                for (int i = 0; i < betas[k].getRowDimension(); i++) {
+                    for (int j = 0; j < betas[k].getColumnDimension(); j++) {
+                        if (betas[k].get(i, j) < 0) {
+                            betas[k].set(i, j, 0);
+                        }
+                    }
+                }
             }
             Matrix avgBetas = betas[0];
             for(int k=1;k<numOfClusters;k++){
@@ -482,14 +490,6 @@ public class Main {
             double error = diffbeta.norm1();
             for (int i = 0; i < numOfPartialData; i++) {
                 prevBeta.set(i, 0, avgBetas.get(i, 0));
-            }
-
-            for (int i = 0; i < avgBetas.getRowDimension(); i++) {
-                for (int j = 0; j < avgBetas.getColumnDimension(); j++) {
-                    if (avgBetas.get(i, j) < 0) {
-                        avgBetas.set(i, j, 0);
-                    }
-                }
             }
             for(int k=0;k<numOfClusters;k++){
                 betaCapMats[k] = (setUpHolders[k].getQ().transpose()).times(avgBetas);
