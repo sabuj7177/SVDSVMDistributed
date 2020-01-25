@@ -20,7 +20,7 @@ import static java.lang.Math.floor;
 
 public class Main {
 
-    private static int numOfClusters = 5;
+    private static int numOfClusters = 4;
     //private static int totalData = 4000;
     private static int numOfPartialData;
     private static int testrow = 1000;
@@ -421,7 +421,7 @@ public class Main {
         Matrix[] betaCapMats = new Matrix[numOfClusters];
 
         for(int k=0;k<numOfClusters;k++){
-            File trainFile = new File("src/main/resources/a9a/a9a_2000_40_train_meka_"+ String.valueOf(k+1) +".txt");
+            File trainFile = new File("src/main/resources/covtype/covtype_2000_40_train_meka_"+ String.valueOf(k+1) +".txt");
             trainMatrix[k] = new Matrix(numOfPartialData,nCols);
             fileScanner = new Scanner(trainFile);
             int counter = 0;
@@ -435,7 +435,7 @@ public class Main {
                 counter++;
             }
 
-            File testFile = new File("src/main/resources/a9a/a9a_1000_40_test_meka_"+ String.valueOf(k+1) +".txt");
+            File testFile = new File("src/main/resources/covtype/covtype_1000_40_test_meka_"+ String.valueOf(k+1) +".txt");
             testMatrix[k] = new Matrix(testrow,nCols);
             fileScanner = new Scanner(testFile);
             counter = 0;
@@ -448,7 +448,7 @@ public class Main {
                 counter++;
             }
 
-            File testLabelFile = new File("src/main/resources/a9a/a9a_1000_test_label_"+ String.valueOf(k+1) +".txt");
+            File testLabelFile = new File("src/main/resources/covtype/covtype_1000_test_label_"+ String.valueOf(k+1) +".txt");
             testLabelMatrix[k] = new Matrix(testrow,1);
             fileScanner = new Scanner(testLabelFile);
             counter = 0;

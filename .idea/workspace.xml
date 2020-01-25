@@ -23,22 +23,20 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-3309">
-              <caret line="22" column="40" selection-start-line="22" selection-start-column="40" selection-end-line="22" selection-end-column="40" />
+            <state relative-caret-position="1716">
+              <caret line="479" column="21" selection-start-line="479" selection-start-column="21" selection-end-line="479" selection-end-column="21" />
               <folding>
                 <element signature="imports" expanded="true" />
-                <element signature="e#2334#2715#0" />
-                <element signature="e#2721#3061#0" />
-                <element signature="e#3067#3339#0" />
-                <element signature="e#3345#3606#0" />
-                <element signature="e#3612#6319#0" />
-                <element signature="e#6325#7846#0" />
-                <element signature="e#7852#8376#0" />
-                <element signature="e#8378#8433#0" />
-                <element signature="e#10728#11254#0" />
-                <element signature="e#11256#11310#0" />
-                <element signature="e#13566#15354#0" />
-                <element signature="e#15360#16510#0" />
+                <element signature="e#3065#3337#0" />
+                <element signature="e#3343#3604#0" />
+                <element signature="e#3610#6317#0" />
+                <element signature="e#6323#7844#0" />
+                <element signature="e#7850#8374#0" />
+                <element signature="e#8376#8431#0" />
+                <element signature="e#10726#11252#0" />
+                <element signature="e#11254#11308#0" />
+                <element signature="e#13564#15352#0" />
+                <element signature="e#15358#16508#0" />
               </folding>
             </state>
           </provider>
@@ -72,7 +70,7 @@
   <component name="ProjectCodeStyleSettingsMigration">
     <option name="version" value="1" />
   </component>
-  <component name="ProjectFrameBounds" extendedState="7">
+  <component name="ProjectFrameBounds" extendedState="6">
     <option name="x" value="-8" />
     <option name="y" value="-8" />
     <option name="width" value="1750" />
@@ -85,7 +83,6 @@
     </navigator>
     <panes>
       <pane id="PackagesPane" />
-      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -124,7 +121,7 @@
               <item name="src" type="462c0819:PsiDirectoryNode" />
               <item name="main" type="462c0819:PsiDirectoryNode" />
               <item name="resources" type="462c0819:PsiDirectoryNode" />
-              <item name="a9a" type="462c0819:PsiDirectoryNode" />
+              <item name="covtype" type="462c0819:PsiDirectoryNode" />
             </path>
             <path>
               <item name="SVDSVMDistributed" type="b2602c69:ProjectViewProjectNode" />
@@ -138,11 +135,12 @@
           <select />
         </subPane>
       </pane>
+      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/../../Thesis on geoSVM/GeoSVM" />
+    <property name="last_opened_file_path" value="$USER_HOME$/Desktop/drop_gear_server/drop-gear-server" />
     <property name="project.structure.last.edited" value="Modules" />
     <property name="project.structure.proportion" value="0.0" />
     <property name="project.structure.side.proportion" value="0.0" />
@@ -196,8 +194,9 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
+    <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.16204691" />
+      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.1652452" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Image Layers" order="2" />
       <window_info id="Designer" order="3" />
@@ -294,22 +293,20 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-3309">
-          <caret line="22" column="40" selection-start-line="22" selection-start-column="40" selection-end-line="22" selection-end-column="40" />
+        <state relative-caret-position="1716">
+          <caret line="479" column="21" selection-start-line="479" selection-start-column="21" selection-end-line="479" selection-end-column="21" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#2334#2715#0" />
-            <element signature="e#2721#3061#0" />
-            <element signature="e#3067#3339#0" />
-            <element signature="e#3345#3606#0" />
-            <element signature="e#3612#6319#0" />
-            <element signature="e#6325#7846#0" />
-            <element signature="e#7852#8376#0" />
-            <element signature="e#8378#8433#0" />
-            <element signature="e#10728#11254#0" />
-            <element signature="e#11256#11310#0" />
-            <element signature="e#13566#15354#0" />
-            <element signature="e#15360#16510#0" />
+            <element signature="e#3065#3337#0" />
+            <element signature="e#3343#3604#0" />
+            <element signature="e#3610#6317#0" />
+            <element signature="e#6323#7844#0" />
+            <element signature="e#7850#8374#0" />
+            <element signature="e#8376#8431#0" />
+            <element signature="e#10726#11252#0" />
+            <element signature="e#11254#11308#0" />
+            <element signature="e#13564#15352#0" />
+            <element signature="e#15358#16508#0" />
           </folding>
         </state>
       </provider>
