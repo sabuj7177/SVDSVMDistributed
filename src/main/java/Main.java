@@ -463,7 +463,7 @@ public class Main {
             betaCapMats[k] = setUpHolders[k].getBetaCapMat();
         }
 
-        Matrix prevBetacap = new Matrix(numOfPartialData,1,1.0);
+        Matrix prevBeta = new Matrix(numOfPartialData,1,1.0);
 
         for (int it = 0; it < maxIteration; it++) {
             AlphaBetaHolder[] holders = new AlphaBetaHolder[numOfClusters];
@@ -471,32 +471,30 @@ public class Main {
             for(int k=0;k<numOfClusters;k++){
                 holders[k] = AlphaBeta(setUpHolders[k].getF(), betaCapMats[k], setUpHolders[k].geteCap());
                 betas[k] = (setUpHolders[k].getQ()).times(holders[k].getBeta());
-
-                for (int i = 0; i < betas[k].getRowDimension(); i++) {
-                    for (int j = 0; j < betas[k].getColumnDimension(); j++) {
-                        if (betas[k].get(i, j) < 0) {
-                            betas[k].set(i, j, 0);
-                        }
-                    }
-                }
-
-                betaCapMats[k] = (setUpHolders[k].getQ().transpose()).times(betas[k]);
             }
-
-            Matrix avgBetaCapMat = betaCapMats[0];
+            Matrix avgBetas = betas[0];
             for(int k=1;k<numOfClusters;k++){
-                avgBetaCapMat = avgBetaCapMat.plus(betaCapMats[k]);
+                avgBetas = avgBetas.plus(betas[k]);
             }
-            avgBetaCapMat = avgBetaCapMat.times(1.0/numOfClusters);
-            Matrix diffbeta = avgBetaCapMat.minus(prevBetacap);
+            avgBetas = avgBetas.times(1.0/numOfClusters);
+
+            Matrix diffbeta = avgBetas.minus(prevBeta);
             double error = diffbeta.norm1();
             for (int i = 0; i < numOfPartialData; i++) {
-                prevBetacap.set(i, 0, avgBetaCapMat.get(i, 0));
+                prevBeta.set(i, 0, avgBetas.get(i, 0));
             }
 
-            for(int k=0;k<numOfClusters;k++){
-                betaCapMats[k] = avgBetaCapMat;
+            for (int i = 0; i < avgBetas.getRowDimension(); i++) {
+                for (int j = 0; j < avgBetas.getColumnDimension(); j++) {
+                    if (avgBetas.get(i, j) < 0) {
+                        avgBetas.set(i, j, 0);
+                    }
+                }
             }
+            for(int k=0;k<numOfClusters;k++){
+                betaCapMats[k] = (setUpHolders[k].getQ().transpose()).times(avgBetas);
+            }
+
             System.out.println("############################Here is iteration " + it + "###############");
             System.out.println("this is error " + error);
 
