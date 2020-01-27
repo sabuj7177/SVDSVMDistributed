@@ -19,10 +19,10 @@ import static java.lang.Math.floor;
 public class Main {
 
     private static int numOfClusters = 4;
-    private static int totalData = 4000;
+    private static int totalData = 8000;
     private static int numOfPartialData;
     private static int testrow = 1000;
-    private static int nCols = 201;
+    private static int nCols = 40;
     private static int thresholdSpark = 10; //If in case data is not evenly distributed
     private static int partitionCounter;
     private static int rowNumberCount = 0;
@@ -43,9 +43,9 @@ public class Main {
     private static double threshold = 0.001;
     private static int maxIteration = 10;
     private static double optStepSize;
-    private static String trainDataPath = "src/main/resources/rcv1/rcv1_train_4000_200_with_meka.txt";
-    private static String testDataPath = "src/main/resources/rcv1/rcv1_test_1000_200.txt";
-    private static String testLabelPath = "src/main/resources/rcv1/rcv1_test_1000_200_with_label.txt";
+    private static String trainDataPath = "src/main/resources/covtype/covtype_8000_40_train_meka.txt";
+    private static String testDataPath = "src/main/resources/covtype/covtype_1000_40_test_meka_";
+    private static String testLabelPath = "src/main/resources/covtype/covtype_1000_test_label_";
     private static double testLabelPositive = 1.0; //Positive label of the data set
     private static double testLabelNegative = -1.0; //Negative label of the data set
 
@@ -490,48 +490,52 @@ public class Main {
         ).persist(StorageLevel.MEMORY_ONLY_SER());
 
         // Load the test data into a Spark RDD, here test data is not multiplied by labels
-        JavaRDD<String> testDataRDD = sc.textFile(testDataPath);
-        JavaRDD<Matrix> testData = testDataRDD.map(new Function<String, Matrix>() {
-                                                         public Matrix call(String s) {
-                                                             String[] singleRecord = s.trim().split(" ");
-                                                             double[][] singleRecordMat = new double[1][nCols];
-                                                             for (int i = 0; i < nCols; i++) {
-                                                                 singleRecordMat[0][i] = Double.parseDouble(singleRecord[i]);
-                                                             }
-                                                             return new Matrix(singleRecordMat);
-                                                         }
-                                                     }
-        ).persist(StorageLevel.MEMORY_ONLY_SER());
-
-        // Load the labels into a Spark RDD
-        JavaRDD<String> testLabelRDD = sc.textFile(testLabelPath);
-        JavaRDD<Double> testLabel = testLabelRDD.map(new Function<String, Double>() {
-                                                           public Double call(String s) {
-                                                               String[] sarray = s.trim().split(" ");
-                                                               return Double.parseDouble(sarray[0]);
+        Matrix[] testdatamat = new Matrix[numOfClusters];
+        Matrix[] testlabelmat = new Matrix[numOfClusters];
+        for(int k=0;k<numOfClusters;k++) {
+            JavaRDD<String> testDataRDD = sc.textFile(testDataPath + String.valueOf(k) + ".txt");
+            JavaRDD<Matrix> testData = testDataRDD.map(new Function<String, Matrix>() {
+                                                           public Matrix call(String s) {
+                                                               String[] singleRecord = s.trim().split(" ");
+                                                               double[][] singleRecordMat = new double[1][nCols];
+                                                               for (int i = 0; i < nCols; i++) {
+                                                                   singleRecordMat[0][i] = Double.parseDouble(singleRecord[i]);
+                                                               }
+                                                               return new Matrix(singleRecordMat);
                                                            }
                                                        }
-        ).persist(StorageLevel.MEMORY_ONLY_SER());
+            ).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        Matrix testdatamat = new Matrix(testrow, nCols);
-        Matrix testlabelmat = new Matrix(testrow, 1);
-        rowNumberCount = 0;
-        for (Matrix line : testData.take(testrow)) {
-            testdatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
-            rowNumberCount++;
-        }
-        rowNumberCount = 0;
-        for (double line : testLabel.take(testrow)) {
-            testlabelmat.set(rowNumberCount, 0, line);
-            rowNumberCount++;
+            // Load the labels into a Spark RDD
+            JavaRDD<String> testLabelRDD = sc.textFile(testLabelPath + String.valueOf(k) + ".txt");
+            JavaRDD<Double> testLabel = testLabelRDD.map(new Function<String, Double>() {
+                                                             public Double call(String s) {
+                                                                 String[] sarray = s.trim().split(" ");
+                                                                 return Double.parseDouble(sarray[0]);
+                                                             }
+                                                         }
+            ).persist(StorageLevel.MEMORY_ONLY_SER());
+
+            testdatamat[k] = new Matrix(testrow, nCols);
+            testlabelmat[k] = new Matrix(testrow, 1);
+            rowNumberCount = 0;
+            for (Matrix line : testData.take(testrow)) {
+                testdatamat[k].setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
+                rowNumberCount++;
+            }
+            rowNumberCount = 0;
+            for (double line : testLabel.take(testrow)) {
+                testlabelmat[k].set(rowNumberCount, 0, line);
+                rowNumberCount++;
+            }
         }
 
-        Matrix trainDatamat = new Matrix(totalData,nCols);
-        rowNumberCount = 0;
-        for (Matrix line : trainingData.take(totalData)) {
-            trainDatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
-            rowNumberCount++;
-        }
+//        Matrix trainDatamat = new Matrix(totalData,nCols);
+//        rowNumberCount = 0;
+//        for (Matrix line : trainingData.take(totalData)) {
+//            trainDatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
+//            rowNumberCount++;
+//        }
 
         //Accumulator to gather parts of R
         Rgatherac = sc.accumulator(new Matrix(numOfClusters * nCols, nCols), new MatrixAccumulatorParam());
@@ -677,23 +681,25 @@ public class Main {
             System.out.println("this is error " + error);
             betaBroadcast = sc.broadcast(betaCapmat);
             if(it%5==0){
-                TestData(alphaList.value(),finalR,testdatamat,testlabelmat);
+                for(int k=0;k<numOfClusters;k++) {
+                    TestData(alphaList.value(), finalR, testdatamat[k], testlabelmat[k]);
+                }
             }
             if (error < threshold) {
                 break;
             }
         }
-        Matrix alphatotalmat = alphaList.value();
-        TestData(alphatotalmat,finalR,testdatamat,testlabelmat);
-        //Matrix support_vectors = Dist_QX(alphatotalmat);
-        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
-        Matrix transposeweightmat = weightmat.transpose();
-        Matrix result = transposeweightmat.times(trainDatamat.transpose());
-        for(int i=0;i<result.getColumnDimension();i++){
-            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
-            System.out.println(i+" "+result.get(0,i));
-            //}
-        }
+//        Matrix alphatotalmat = alphaList.value();
+//        TestData(alphatotalmat,finalR,testdatamat,testlabelmat);
+//        //Matrix support_vectors = Dist_QX(alphatotalmat);
+//        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
+//        Matrix transposeweightmat = weightmat.transpose();
+//        Matrix result = transposeweightmat.times(trainDatamat.transpose());
+//        for(int i=0;i<result.getColumnDimension();i++){
+//            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
+//            System.out.println(i+" "+result.get(0,i));
+//            //}
+//        }
 
 
 
