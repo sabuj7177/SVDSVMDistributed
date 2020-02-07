@@ -23,10 +23,13 @@
       <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="366">
-              <caret line="691" column="49" selection-start-line="691" selection-start-column="49" selection-end-line="691" selection-end-column="49" />
+            <state relative-caret-position="154">
+              <caret line="46" column="110" selection-start-line="46" selection-start-column="110" selection-end-line="46" selection-end-column="110" />
               <folding>
                 <element signature="imports" expanded="true" />
+                <element signature="method#AlphaBeta#0;class#Main#0" />
+                <element signature="method#print#0;class#Main#0" />
+                <element signature="method#print#1;class#Main#0" />
                 <element signature="method#HouseHolderDecomposition2#0;class#Main#0" />
                 <element signature="method#HouseHolderDecomposition#0;class#Main#0" />
                 <element signature="method#LocalQtX#0;class#Main#0" />
@@ -35,6 +38,7 @@
                 <element signature="method#LocalQX#0;class#Main#0" />
                 <element signature="method#GlobalQX#0;class#Main#0" />
                 <element signature="method#Dist_QX#0;class#Main#0" />
+                <element signature="method#TestData#0;class#Main#0" />
               </folding>
             </state>
           </provider>
@@ -74,6 +78,8 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="PackagesPane" />
+      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -112,19 +118,25 @@
               <item name="src" type="462c0819:PsiDirectoryNode" />
               <item name="main" type="462c0819:PsiDirectoryNode" />
               <item name="resources" type="462c0819:PsiDirectoryNode" />
+              <item name="covtype" type="462c0819:PsiDirectoryNode" />
+            </path>
+            <path>
+              <item name="SVDSVMDistributed" type="b2602c69:ProjectViewProjectNode" />
+              <item name="SVDSVMDistributed" type="462c0819:PsiDirectoryNode" />
+              <item name="src" type="462c0819:PsiDirectoryNode" />
+              <item name="main" type="462c0819:PsiDirectoryNode" />
+              <item name="resources" type="462c0819:PsiDirectoryNode" />
               <item name="realsim" type="462c0819:PsiDirectoryNode" />
             </path>
           </expand>
           <select />
         </subPane>
       </pane>
-      <pane id="PackagesPane" />
-      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/../../Thesis on geoSVM/GeoSVM" />
+    <property name="last_opened_file_path" value="$USER_HOME$/Desktop/drop_gear_server/drop-gear-server" />
     <property name="project.structure.last.edited" value="Modules" />
     <property name="project.structure.proportion" value="0.0" />
     <property name="project.structure.side.proportion" value="0.0" />
@@ -174,9 +186,10 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
+    <frame x="-8" y="-8" width="1936" height="1056" extended-state="7" />
+    <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.15724947" />
+      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.1748401" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Image Layers" order="2" />
       <window_info id="Designer" order="3" />
@@ -185,7 +198,7 @@
       <window_info id="Favorites" order="6" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
       <window_info anchor="bottom" id="Find" order="1" />
-      <window_info anchor="bottom" id="Run" order="2" weight="0.32936078" />
+      <window_info active="true" anchor="bottom" id="Run" order="2" visible="true" weight="0.32936078" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
@@ -238,12 +251,18 @@
     </option>
   </component>
   <component name="editorHistoryManager">
+    <entry file="file://$PROJECT_DIR$/src/main/resources/covtype/covtype_4000_test_label_only_meka.txt">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
     <entry file="file://$PROJECT_DIR$/src/main/java/Main.java">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="366">
-          <caret line="691" column="49" selection-start-line="691" selection-start-column="49" selection-end-line="691" selection-end-column="49" />
+        <state relative-caret-position="154">
+          <caret line="46" column="110" selection-start-line="46" selection-start-column="110" selection-end-line="46" selection-end-column="110" />
           <folding>
             <element signature="imports" expanded="true" />
+            <element signature="method#AlphaBeta#0;class#Main#0" />
+            <element signature="method#print#0;class#Main#0" />
+            <element signature="method#print#1;class#Main#0" />
             <element signature="method#HouseHolderDecomposition2#0;class#Main#0" />
             <element signature="method#HouseHolderDecomposition#0;class#Main#0" />
             <element signature="method#LocalQtX#0;class#Main#0" />
@@ -252,10 +271,7 @@
             <element signature="method#LocalQX#0;class#Main#0" />
             <element signature="method#GlobalQX#0;class#Main#0" />
             <element signature="method#Dist_QX#0;class#Main#0" />
-            <element signature="e#24321#24322#0" expanded="true" />
-            <element signature="e#24361#24362#0" expanded="true" />
-            <element signature="e#24520#24521#0" expanded="true" />
-            <element signature="e#24562#24563#0" expanded="true" />
+            <element signature="method#TestData#0;class#Main#0" />
           </folding>
         </state>
       </provider>

@@ -19,10 +19,10 @@ import static java.lang.Math.floor;
 public class Main {
 
     private static int numOfClusters = 4;
-    private static int totalData = 4000;
+    private static int totalData = 8000;
     private static int numOfPartialData;
-    private static int testrow = 1000;
-    private static int nCols = 201;
+    private static int testrow = 4000;
+    private static int nCols = 40;
     private static int thresholdSpark = 10; //If in case data is not evenly distributed
     private static int partitionCounter;
     private static int rowNumberCount = 0;
@@ -41,11 +41,11 @@ public class Main {
     private static double learnRate = 0.2;
     private static double C = 1.0;
     private static double threshold = 0.001;
-    private static int maxIteration = 10;
+    private static int maxIteration = 20;
     private static double optStepSize;
-    private static String trainDataPath = "src/main/resources/rcv1/rcv1_train_4000_200_with_meka.txt";
-    private static String testDataPath = "src/main/resources/rcv1/rcv1_test_1000_200.txt";
-    private static String testLabelPath = "src/main/resources/rcv1/rcv1_test_1000_200_with_label.txt";
+    private static String trainDataPath = "src/main/resources/covtype/covtype_8000_40_train_meka_only_meka.txt";
+    private static String testDataPath = "src/main/resources/covtype/covtype_4000_40_test_meka_only_meka.txt";
+    private static String testLabelPath = "src/main/resources/covtype/covtype_4000_test_label_only_meka.txt";
     private static double testLabelPositive = 1.0; //Positive label of the data set
     private static double testLabelNegative = -1.0; //Negative label of the data set
 
@@ -60,7 +60,7 @@ public class Main {
     }
 
     /*public static int BetaChange(Matrix M,Matrix mainMat){
-        int count = 0;+
+        int count = 0;
 
         //double[][] m = M.getArray();
         for(int i=0;i<M.getRowDimension();i++){
@@ -686,14 +686,14 @@ public class Main {
         Matrix alphatotalmat = alphaList.value();
         TestData(alphatotalmat,finalR,testdatamat,testlabelmat);
         //Matrix support_vectors = Dist_QX(alphatotalmat);
-        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
-        Matrix transposeweightmat = weightmat.transpose();
-        Matrix result = transposeweightmat.times(trainDatamat.transpose());
-        for(int i=0;i<result.getColumnDimension();i++){
-            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
-            System.out.println(i+" "+result.get(0,i));
-            //}
-        }
+//        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
+//        Matrix transposeweightmat = weightmat.transpose();
+//        Matrix result = transposeweightmat.times(trainDatamat.transpose());
+//        for(int i=0;i<result.getColumnDimension();i++){
+//            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
+//            System.out.println(i+" "+result.get(0,i));
+//            //}
+//        }
 
 
 
