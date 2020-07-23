@@ -1,76 +1,91 @@
 import Jama.Matrix;
-import org.apache.log4j.Logger;
-import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.SparkConf;
-import org.apache.spark.api.java.function.FlatMapFunction;
-import java.util.*;
-import java.io.IOException;
+import jep.JepException;
+import jep.MainInterpreter;
 import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 import org.apache.spark.Accumulator;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.storage.StorageLevel;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Scanner;
+
 import static java.lang.Math.abs;
 import static java.lang.Math.floor;
 
 public class Main {
-
     private static int numOfClusters = 4;
-    private static int totalData = 4000;
-    private static int numOfPartialData;
-    private static int testrow = 1000;
-    private static int nCols = 201;
-    private static int thresholdSpark = 10; //If in case data is not evenly distributed
-    private static int partitionCounter;
+    private static int totalDataSize;
+    private static int nCols = 41;
+    private static int testRowCount;
+    private static int sparkExtraMatrixSize = 10; //For the case when data is not evenly distributed
+    private static int partitionCounter = 0;
     private static int rowNumberCount = 0;
+    private static int clusterCounter = 0;
     private static int fullIterator = 0;
     private static int partialIterator = 0;
+    private static int maxIteration = 500;
+
+    private static double learnRate = 0.2;
+    private static double C = 1.0;
+    private static double testLabelPositive = 1.0; //Positive label of the data set
+    private static double testLabelNegative = -1.0; //Negative label of the data set
+
+    private static String datasetName = "a9a";
+    private static String variance = "0";
+    private static String trainDataPath = "src/main/resources/a9a/a9a_train_data_with_label.txt";
+    private static String trainLabelPath = "src/main/resources/a9a/a9a_label_train_col_123.txt";
+    private static String testDataPath = "src/main/resources/a9a/a9a_test_after_meka_40.txt";
+    private static String testLabelPath = "src/main/resources/a9a/a9a_label_test_col_123.txt";
+
     private static Matrix globalReflector;
     private static Matrix recordCountInClustersMat;
-    private static Accumulator<Matrix> Rgatherac;
+
     private static Accumulator<Matrix> alphaList;
     private static Accumulator<Matrix> betaList;
     private static Accumulator<Matrix> xAcc;
+
     private static Broadcast<Matrix> betaBroadcast;
     private static Broadcast<Matrix> enBroadcast;
     private static JavaRDD<Matrix> localReflectors;
 
-    private static double learnRate = 0.2;
-    private static double C = 1.0;
-    private static double threshold = 0.001;
-    private static int maxIteration = 10;
-    private static double optStepSize;
-    private static String trainDataPath = "src/main/resources/rcv1/rcv1_train_4000_200_with_meka.txt";
-    private static String testDataPath = "src/main/resources/rcv1/rcv1_test_1000_200.txt";
-    private static String testLabelPath = "src/main/resources/rcv1/rcv1_test_1000_200_with_label.txt";
-    private static double testLabelPositive = 1.0; //Positive label of the data set
-    private static double testLabelNegative = -1.0; //Negative label of the data set
+    private static FileWriter fileWriter;
 
-    private static AlphaBetaHolder AlphaBeta(Matrix F, Matrix betaCapOld, Matrix Ecap) {
-        Matrix alphaCap = (F.inverse()).times(Ecap.minus(betaCapOld));
+    private static AlphaBetaHolder AlphaBeta(Matrix F, Matrix betaCapOld, Matrix Ecap, int recordCount) {
+        Matrix B = Ecap.minus(betaCapOld);
+        Matrix alphaCap = new Matrix(recordCount,1);
+        alphaCap.setMatrix(0,nCols-1,0, 0, F.inverse().times(B.getMatrix(0,nCols-1,0,0)));
+        alphaCap.setMatrix(nCols, recordCount-1,0,0,B.getMatrix(nCols, recordCount-1,0,0).times(-2*C));
+//        Matrix alphaCap = (F.inverse()).times();
+        double optStepSize = (floor(1.0/(learnRate*C))-0.5)*learnRate;
         Matrix betaCap = betaCapOld.minus(alphaCap.times(optStepSize));
-
         AlphaBetaHolder holder = new AlphaBetaHolder();
         holder.setAlpha(alphaCap);
         holder.setBeta(betaCap);
         return holder;
     }
 
-    /*public static int BetaChange(Matrix M,Matrix mainMat){
-        int count = 0;+
-
-        //double[][] m = M.getArray();
-        for(int i=0;i<M.getRowDimension();i++){
-            double value = (M.get(i, 0)/mainMat.get(i, 0))*100.0;
-            if(value>0.1){
-                count++;
-            }
-        }
-        return count;
-    }*/
+    private static AlphaBetaHolder AlphaBetaForOtherCluster(Matrix betaCapOld, Matrix Ecap) {
+        Matrix alphaCap = (Ecap.minus(betaCapOld)).times(-2*C);
+        double optStepSize = (floor(1.0/(learnRate*C))-0.5)*learnRate;
+        Matrix betaCap = betaCapOld.minus(alphaCap.times(optStepSize));
+        AlphaBetaHolder holder = new AlphaBetaHolder();
+        holder.setAlpha(alphaCap);
+        holder.setBeta(betaCap);
+        return holder;
+    }
 
     public static void print(Matrix m) {
         for (int i = 0; i < m.getRowDimension(); i++) {
@@ -84,6 +99,31 @@ public class Main {
     public static void print(Matrix m, int row, int column) {
         for (int i = 0; i < row; i++) {
             for (int j = 0; j < column; j++) {
+                System.out.print(m.get(i, j) + " ");
+            }
+            System.out.println();
+        }
+    }
+
+    public static void print(Matrix m, int startRow, int endRow, int startCol, int endCol){
+        if(startRow==-1){
+            startRow = 0;
+        }
+
+        if(endRow == -1){
+            endRow = m.getRowDimension();
+        }
+
+        if(startCol == -1){
+            startCol = 0;
+        }
+
+        if(endCol == -1){
+            endCol = m.getColumnDimension();
+        }
+
+        for (int i = startRow; i < endRow; i++) {
+            for (int j = startCol; j < endCol; j++) {
                 System.out.print(m.get(i, j) + " ");
             }
             System.out.println();
@@ -180,27 +220,22 @@ public class Main {
         return qrh;
     }
 
-    private static QRHolder HouseHolderDecomposition(double[][] A){
-        int n = A.length;
-        int d = A[0].length;
-        Matrix updatedA = new Matrix(A);
+    private static QRHolder HouseHolderDecomposition(Matrix A){
+        int n = A.getRowDimension();
+        int d = A.getColumnDimension();
+        Matrix updatedA = new Matrix(A.getArray());
         Matrix reflectors = new Matrix(n,d);
+
         for(int i=0;i<d;i++){
             double norm_val = updatedA.getMatrix(i, n-1, i, i).normF();
             reflectors.setMatrix(i, n-1, i, i, updatedA.getMatrix(i, n-1, i, i));
-            if(updatedA.get(i, i)<0){
-                norm_val = norm_val*-1;
-            }
-            double updated_val = reflectors.get(i, i) + norm_val;
+            double updated_val = reflectors.get(i, i) + norm_val*(updatedA.get(i,i)<0?-1:1);
             reflectors.set(i, i, updated_val);
-            Matrix col_mat = reflectors.getMatrix(i, n-1, i, i);
-            double col_norm = col_mat.normF();
-            col_mat = col_mat.times(1.0/col_norm);
+            Matrix col_mat = reflectors.getMatrix(i, n-1, i, i).times(1.0/(reflectors.getMatrix(i, n-1, i, i).normF()));
             reflectors.setMatrix(i, n-1, i, i, col_mat);
 
-            Matrix partTransA = updatedA.getMatrix(i, n-1, i, d-1);
-            Matrix temp_mat = col_mat.times(col_mat.transpose()).times(partTransA).times(2);
-            Matrix minus_result = partTransA.minus(temp_mat);
+            Matrix minus_result = updatedA.getMatrix(i, n-1, i, d-1).minus(col_mat.times(col_mat.transpose())
+                    .times(updatedA.getMatrix(i, n-1, i, d-1)).times(2));
             updatedA.setMatrix(i, n-1, i, d-1, minus_result);
             for(int j=i;j<n;j++){
                 for(int k=i;k<d;k++){
@@ -212,10 +247,9 @@ public class Main {
 
         }
 
-        Matrix R = updatedA.getMatrix(0, d-1, 0, d-1);
         QRHolder qrh = new QRHolder();
         qrh.setReflector(reflectors);
-        qrh.setR(R);
+        qrh.setR(updatedA.getMatrix(0, d-1, 0, d-1));
         return qrh;
     }
 
@@ -241,19 +275,17 @@ public class Main {
     }
 
     private static Matrix Dist_QtX(Matrix x){
-        xAcc.setValue(new Matrix(totalData,1));
+        xAcc.setValue(new Matrix(totalDataSize,1));
         fullIterator = 0;
-        localReflectors.foreachPartition(new VoidFunction<Iterator<Matrix>>() {
-            public void call(Iterator<Matrix> arg0) throws Exception {
-                Matrix reflector = arg0.next();
-                int rowIncluster = reflector.getRowDimension();
-                Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
-                Matrix updatedSubX = LocalQtX(reflector,subX);
-                Matrix temp = new Matrix(totalData, 1);
-                temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
-                xAcc.add(temp);
-                fullIterator += rowIncluster;
-            }
+        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+            Matrix reflector = arg0.next();
+            int rowIncluster = reflector.getRowDimension();
+            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+            Matrix updatedSubX = LocalQtX(reflector,subX);
+            Matrix temp = new Matrix(totalDataSize, 1);
+            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+            xAcc.add(temp);
+            fullIterator += rowIncluster;
         });
 
         Matrix finalX = xAcc.value();
@@ -317,52 +349,90 @@ public class Main {
             partialIterator += nCols;
         }
 
-        xAcc.setValue(new Matrix(totalData,1));
+        xAcc.setValue(new Matrix(totalDataSize,1));
         fullIterator = 0;
-        localReflectors.foreachPartition(new VoidFunction<Iterator<Matrix>>() {
-            public void call(Iterator<Matrix> arg0) throws Exception {
-                Matrix reflector = arg0.next();
-                int rowIncluster = reflector.getRowDimension();
-                Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
-                Matrix updatedSubX = LocalQX(reflector,subX);
-                Matrix temp = new Matrix(totalData, 1);
-                temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
-                xAcc.add(temp);
-                fullIterator += rowIncluster;
-            }
+        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+            Matrix reflector = arg0.next();
+            int rowIncluster = reflector.getRowDimension();
+            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+            Matrix updatedSubX = LocalQX(reflector,subX);
+            Matrix temp = new Matrix(totalDataSize, 1);
+            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+            xAcc.add(temp);
+            fullIterator += rowIncluster;
         });
 
         return xAcc.value();
     }
 
-    private static void TestData(Matrix alphatotalmat, Matrix finalR, Matrix testdatamat, Matrix testlabelmat){
-        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
-        Matrix transposeweightmat = weightmat.transpose();
-        Matrix result = transposeweightmat.times(testdatamat.transpose());
+    private static Matrix Dist_QX2(Matrix tempx){
+        Matrix x = new Matrix(tempx.getRowDimension(), tempx.getColumnDimension());
+        for(int i=0;i<tempx.getRowDimension();i++){
+            for(int j=0;j<tempx.getColumnDimension();j++){
+                x.set(i,j,tempx.get(i,j));
+            }
+        }
+
+        Matrix partialX = new Matrix(numOfClusters*nCols,1);
+        fullIterator = 0;
+        partialIterator = 0;
+        for(int k=0;k<numOfClusters;k++){
+            Matrix temp = x.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
+            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
+            fullIterator += (int) recordCountInClustersMat.get(k, 0);
+            partialIterator += nCols;
+        }
+        Matrix updatedPartialX = GlobalQX(partialX);
+        rowNumberCount = 0;
+        partialIterator = 0;
+        for (int k = 0; k < numOfClusters; k++) {
+            x.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
+            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
+            partialIterator += nCols;
+        }
+
+        xAcc.setValue(new Matrix(totalDataSize,1));
+        fullIterator = 0;
+        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+            Matrix reflector = arg0.next();
+            int rowIncluster = reflector.getRowDimension();
+            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+            Matrix updatedSubX = LocalQX(reflector,subX);
+            Matrix temp = new Matrix(totalDataSize, 1);
+            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+            xAcc.add(temp);
+            fullIterator += rowIncluster;
+        });
+
+        return xAcc.value();
+//        return new Matrix(totalDataSize,1);
+    }
+
+    private static void TestData(Matrix alphaTotalMatrix, Matrix finalR, Matrix testDataMatrix, Matrix testLabelMatrix, double bias) throws IOException {
+        Matrix weightMatrix = (finalR.transpose()).times(alphaTotalMatrix.getMatrix(0, nCols - 1, 0, 0));
+//        weightMatrix.set(nCols-1,0,bias);
+        Matrix transposeWeightMatrix = weightMatrix.transpose();
+        Matrix result = transposeWeightMatrix.times(testDataMatrix.transpose());
         int correct = 0;
         int wrong = 0;
         int correctPos = 0;
         int correctNeg = 0;
         int wrongPos = 0;
         int wrongNeg = 0;
-        for (int i = 0; i < testrow; i++) {
+        for (int i = 0; i < testRowCount; i++) {
             if (result.get(0, i) > 0) {
-                if (testlabelmat.get(i, 0) == testLabelPositive) {
-                    //System.out.println("correct");
+                if (testLabelMatrix.get(i, 0) == testLabelPositive) {
                     correct += 1;
                     correctPos += 1;
                 } else {
-                    //System.out.println("wrong");
                     wrong += 1;
                     wrongPos += 1;
                 }
             } else {
-                if (testlabelmat.get(i, 0) == testLabelNegative) {
-                    //System.out.println("correct");
+                if (testLabelMatrix.get(i, 0) == testLabelNegative) {
                     correct += 1;
                     correctNeg += 1;
                 } else {
-                    //System.out.println("wrong");
                     wrong += 1;
                     wrongNeg += 1;
                 }
@@ -370,17 +440,81 @@ public class Main {
         }
         System.out.println("Correct is " + correct);
         System.out.println("Wrong is " + wrong);
-        double acc = (correct * 100) / testrow;
-        System.out.println("Accuracy is " + acc);
+        double accuracy = (correct * 100.0) / testRowCount;
+        System.out.println("Accuracy is " + accuracy);
         System.out.println("Correct positive is " + correctPos);
         System.out.println("Correct negative is " + correctNeg);
         System.out.println("Wrong positive is " + wrongPos);
         System.out.println("Wrong negative is " + wrongNeg);
+
+        fileWriter.write("Correct is " + correct + "\n");
+        fileWriter.write("Wrong is " + wrong + "\n");
+        fileWriter.write("Accuracy is " + accuracy + "\n");
+        fileWriter.write("Correct positive is " + correctPos + "\n");
+        fileWriter.write("Correct negative is " + correctNeg + "\n");
+        fileWriter.write("Wrong positive is " + wrongPos + "\n");
+        fileWriter.write("Wrong negative is " + wrongNeg + "\n");
+        fileWriter.flush();
     }
 
+    private static List<Matrix> getRowListFromMatrix(Matrix m){
+        int rowLen = m.getRowDimension();
+        int colLen = m.getColumnDimension();
+        List<Matrix> rowList = new ArrayList<>();
+        for(int i=0;i<rowLen;i++){
+            rowList.add(m.getMatrix(i,i,0,colLen-1));
+        }
+        return rowList;
+    }
 
-    public static void main(String[] args) throws IOException {
+    private static double getBias(Matrix trainDataWithoutLabel, Matrix trainLabel, Matrix alphaMat){
+        Matrix supportValues = Dist_QX2(alphaMat);
+//        Matrix supportValues = alphaMat;
+        List<Integer> supportValuesIndexList = new ArrayList<>();
+        List<Double> supportValuesList = new ArrayList<>();
+        for(int i=0;i<totalDataSize;i++){
+            if (supportValues.get(i,0)>0.001){
+                supportValuesIndexList.add(i);
+                supportValuesList.add(supportValues.get(i,0));
+            }
+        }
 
+        Matrix Xk = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(0), supportValuesIndexList.get(0), 0, nCols-1);
+        int svCount = supportValuesIndexList.size();
+        double biasLocal = 0;
+        for(int i=0;i<svCount;i++){
+            Matrix temp = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(i), supportValuesIndexList.get(i), 0, nCols-1);
+            double scalerValue = temp.times(Xk.transpose()).get(0,0);
+            biasLocal += supportValuesList.get(i)*trainLabel.get(supportValuesIndexList.get(i), 0)*scalerValue;
+        }
+
+        double bias = trainLabel.get(supportValuesIndexList.get(0), 0) - biasLocal;
+        return bias;
+//        return 0.1;
+    }
+
+    public static void main(String[] args) throws IOException, CustomException, JepException {
+        // Initialization
+//        String absolutePath = "C:\\Jep\\jep\\build\\lib.win-amd64-3.6\\jep\\jep.cp36-win_amd64.dll";
+//        MainInterpreter.setJepLibraryPath(absolutePath);
+        xAcc = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
+        String filePathPrefix = "D:\\L4T1\\Thesis\\thesis codes\\SVDSVMDistributed\\SVDSVMDistributed\\src\\main\\resources\\";
+        fileWriter = new FileWriter(filePathPrefix + datasetName + "\\logfile_"+datasetName+"_"+variance+"_"+nCols+".txt");
+        Logger.getLogger("org").setLevel(Level.OFF);
+        Logger.getLogger("akka").setLevel(Level.OFF);
+
+//        Instant mekaStart = Instant.now();
+        // Memory Efficient Kernel Approximation
+//        MEKAHolder mekaHolder = new MEKAHolder("src/main/resources/a9a/a9a_data_for_meka_col_123.txt",
+//                "src/main/resources/a9a/a9a_label_for_meka_col_123.txt",
+//                4, 32561, 123, 10, nCols, 0.1, 0.1, 0.8);
+//        mekaHolder.ComputeMEKA();
+//        Matrix trainDataWithLabel = mekaHolder.getTrainDataWithLabel();
+//        Matrix testData = mekaHolder.getTestData();
+//        Matrix testLabel = mekaHolder.getTestLabel();
+//        testRowCount = testData.getRowDimension();
+//        totalDataSize = trainDataWithLabel.getRowDimension();
+        Instant mekaEnd = Instant.now();
 
         /*try {
             trainDataPath = System.getProperty("trainData");
@@ -423,7 +557,7 @@ public class Main {
         }
 
         try {
-            testrow = Integer.parseInt(System.getProperty("testRows"));
+            testRowCount = Integer.parseInt(System.getProperty("testRows"));
         } catch (Exception e) {
             System.out.println("Test Rows is Missing");
             return;
@@ -464,158 +598,93 @@ public class Main {
             return;
         }*/
 
-        SparkConf conf = new SparkConf().setMaster("local").setAppName("Word Count");
-        JavaSparkContext sc = new JavaSparkContext(conf);
-        numOfPartialData = totalData / numOfClusters;
-        optStepSize = (floor(1.0/(learnRate*C))-0.5)*learnRate;
 
-        Logger.getLogger("org").setLevel(Level.OFF);
-        Logger.getLogger("akka").setLevel(Level.OFF);
+        totalDataSize = 26048;
+        testRowCount = 6513;
 
-        xAcc = sc.accumulator(new Matrix(totalData, 1), new MatrixAccumulatorParam());
-
-        // Load the training data into a Spark RDD, which is a distributed representation of each line of text
-        //This process does not split data evenly.
-        JavaRDD<String> trainingDataRDD = sc.textFile(trainDataPath, numOfClusters);
-        JavaRDD<Matrix> trainingData = trainingDataRDD.map(new Function<String, Matrix>() {
-                                                                  public Matrix call(String s) {
-                                                                      String[] sarray = s.trim().split(" ");
-                                                                      double[][] values = new double[1][nCols];
-                                                                      for (int i = 0; i < nCols; i++) {
-                                                                          values[0][i] = Double.parseDouble(sarray[i]);
-                                                                      }
-                                                                      return new Matrix(values);
-                                                                  }
-                                                              }
-        ).persist(StorageLevel.MEMORY_ONLY_SER());
-
-        // Load the test data into a Spark RDD, here test data is not multiplied by labels
-        JavaRDD<String> testDataRDD = sc.textFile(testDataPath);
-        JavaRDD<Matrix> testData = testDataRDD.map(new Function<String, Matrix>() {
-                                                         public Matrix call(String s) {
-                                                             String[] singleRecord = s.trim().split(" ");
-                                                             double[][] singleRecordMat = new double[1][nCols];
-                                                             for (int i = 0; i < nCols; i++) {
-                                                                 singleRecordMat[0][i] = Double.parseDouble(singleRecord[i]);
-                                                             }
-                                                             return new Matrix(singleRecordMat);
-                                                         }
-                                                     }
-        ).persist(StorageLevel.MEMORY_ONLY_SER());
-
-        // Load the labels into a Spark RDD
-        JavaRDD<String> testLabelRDD = sc.textFile(testLabelPath);
-        JavaRDD<Double> testLabel = testLabelRDD.map(new Function<String, Double>() {
-                                                           public Double call(String s) {
-                                                               String[] sarray = s.trim().split(" ");
-                                                               return Double.parseDouble(sarray[0]);
-                                                           }
-                                                       }
-        ).persist(StorageLevel.MEMORY_ONLY_SER());
-
-        Matrix testdatamat = new Matrix(testrow, nCols);
-        Matrix testlabelmat = new Matrix(testrow, 1);
-        rowNumberCount = 0;
-        for (Matrix line : testData.take(testrow)) {
-            testdatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
-            rowNumberCount++;
-        }
-        rowNumberCount = 0;
-        for (double line : testLabel.take(testrow)) {
-            testlabelmat.set(rowNumberCount, 0, line);
-            rowNumberCount++;
-        }
-
-        Matrix trainDatamat = new Matrix(totalData,nCols);
-        rowNumberCount = 0;
-        for (Matrix line : trainingData.take(totalData)) {
-            trainDatamat.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, line);
-            rowNumberCount++;
-        }
-
-        //Accumulator to gather parts of R
-        Rgatherac = sc.accumulator(new Matrix(numOfClusters * nCols, nCols), new MatrixAccumulatorParam());
-        //Accumulator to store which cluster have how many records
-        Accumulator<Matrix> recordCountInClusters = sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
-        rowNumberCount = 0;
-        localReflectors = trainingData.mapPartitions(new FlatMapFunction<Iterator<Matrix>, Matrix>() {
-            @Override
-            public Iterator<Matrix> call(Iterator<Matrix> matrixIterator) throws Exception {
-                //If data is not evenly distributed, we are making matrix with slightly larger size.
-                Matrix partitionedMatrix = new Matrix(numOfPartialData + thresholdSpark, nCols);
-                int currentRow = 0;
-                while (matrixIterator.hasNext()) {
-                    Matrix rowMat = matrixIterator.next();
-                    partitionedMatrix.setMatrix(currentRow, currentRow, 0, nCols - 1, rowMat);
-                    currentRow++;
+        JavaRDD<Matrix> trainingDataRDD = SingleSparkContext.sc.textFile(trainDataPath, numOfClusters)
+                .map((Function<String, Matrix>) s -> {
+                    String[] sarray = s.trim().split(" ");
+                    double[][] values = new double[1][nCols];
+                    for (int i = 0; i < nCols; i++) {
+                        values[0][i] = Double.parseDouble(sarray[i]);
+                    }
+                    return new Matrix(values);
                 }
-                //We are trimming rows which are not used from partitionedMatrix.
-                Matrix trimmedMatrix = partitionedMatrix.getMatrix(0, currentRow - 1, 0, nCols - 1);
-                //Local QR decomposition
-                QRHolder qrd = HouseHolderDecomposition(trimmedMatrix.getArray());
-                //Gathering partial d*d R to RgatherAccumulator
-                Matrix temp = new Matrix(numOfClusters * nCols, nCols);
-                temp.setMatrix(partitionCounter, partitionCounter + nCols - 1, 0, nCols - 1, qrd.getR());
-                partitionCounter += nCols;
-                Rgatherac.add(temp);
-                //Gathering no of instance per cluster posseses
-                Matrix temp2 = new Matrix(numOfClusters, 1);
-                temp2.set(rowNumberCount, 0, currentRow);
-                rowNumberCount += 1;
-                recordCountInClusters.add(temp2);
-                //Returning generated Reflector from each cluster to a RDD
-                List<Matrix> new_List = new ArrayList();
-                new_List.add(qrd.getReflector());
-                return new_List.iterator();
+                ).persist(StorageLevel.MEMORY_ONLY_SER());
+
+        // When reading data from text file, generally data count in all clusters does not become same. So we need an
+        // accumulator to store which clusters have how many records.
+        Accumulator<Matrix> recordCountInClusters = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
+
+        //Accumulator to gather partial R
+        Accumulator<Matrix> rGatherAcc = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters * nCols, nCols), new MatrixAccumulatorParam());
+        partitionCounter = 0;
+        localReflectors = trainingDataRDD.mapPartitions(matrixIterator -> {
+            //As data is not evenly distributed, we are making matrix with slightly larger size.
+            Matrix partitionedMatrix = new Matrix((totalDataSize / numOfClusters) + sparkExtraMatrixSize, nCols);
+            int currentRow = 0;
+            while (matrixIterator.hasNext()) {
+                Matrix rowMat = matrixIterator.next();
+                double label = rowMat.get(0,nCols-1);
+                rowMat.set(0,nCols-1,1.0);
+                partitionedMatrix.setMatrix(currentRow, currentRow, 0, nCols - 1, rowMat.times(label));
+                currentRow++;
             }
+
+            //We are trimming rows which are not used from partitionedMatrix.
+            Matrix trimmedMatrix = partitionedMatrix.getMatrix(0, currentRow - 1, 0, nCols - 1);
+
+            // Generating R matrix
+            QRHolder qrd = HouseHolderDecomposition(trimmedMatrix);
+            Matrix temp = new Matrix(numOfClusters * nCols, nCols);
+            temp.setMatrix(partitionCounter * nCols, (partitionCounter+1) * nCols - 1, 0, nCols - 1, qrd.getR());
+            rGatherAcc.add(temp);
+
+            // Generating matrix for record count in each clusters.
+            Matrix temp2 = new Matrix(numOfClusters, 1);
+            temp2.set(partitionCounter, 0, currentRow);
+            recordCountInClusters.add(temp2);
+            partitionCounter += 1;
+
+            //Returning generated Reflector from each cluster to a RDD
+            System.out.println("Gathering partial reflectors in cluster "+partitionCounter);
+            List<Matrix> new_List = new ArrayList();
+            new_List.add(qrd.getReflector());
+            return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
         //Spark uses lazy waiting for mapPartitions method. So we are using this codes to compute QReflectors early
-        JavaRDD<Integer> dummyMap = localReflectors.map(new Function<Matrix, Integer>() {
-            public Integer call(Matrix s) {
-                return 0;
-            }
-        });
-        Integer dummyReduce = dummyMap.reduce(new Function2<Integer, Integer, Integer>() {
-            public Integer call(Integer a, Integer b) {
-                return a+b;
-            }
-        });
+        JavaRDD<Integer> dummyMap = localReflectors.map((Function<Matrix, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
 
         //Generating final R and final R inverse.
-        Matrix RgatherMat = Rgatherac.value();
-        QRHolder qrdholder = HouseHolderDecomposition(RgatherMat.getArray());
-        globalReflector = qrdholder.getReflector();
-        Matrix finalR = qrdholder.getR();
-        ////////////////////////QR Decomposition ends here//////////////////////
-        System.out.println("QR decomposition completes here");
-        //Getting record number in each cluster
+        Matrix rGatherMat = rGatherAcc.value();
+        QRHolder qrHolder = HouseHolderDecomposition(rGatherMat);
+        globalReflector = qrHolder.getReflector();
+        Matrix finalR = qrHolder.getR();
         recordCountInClustersMat = recordCountInClusters.value();
-        //Initializing Beta matrix in 0th iteration
-        Matrix betaCapmat = new Matrix(totalData,1,1.0);
-        betaBroadcast = sc.broadcast(betaCapmat);
-        /*====================Calculating Ecap starts here====================*/
+        System.out.println("QR decomposition complete");
 
-        /*======================Calculating Ecap ends here====================*/
-        Matrix Ecap = Dist_QtX(new Matrix(totalData,1,-1.0));
-        enBroadcast = sc.broadcast(Ecap);
+        //Initializing Beta matrix in 0th iteration
+        Matrix betaCapmat = new Matrix(totalDataSize,1,1.0);
+        betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
+
+        Matrix Ecap = Dist_QtX(new Matrix(totalDataSize,1,-1.0));
+        enBroadcast = SingleSparkContext.sc.broadcast(Ecap);
+        //Creating RgRgT
+        Matrix RgRgTmat = finalR.times(finalR.transpose());
         List<Matrix> Fs = new ArrayList<>();
         //Initializing F matrix
         Matrix[] F = new Matrix[numOfClusters];
-        F[0] = new Matrix((int) recordCountInClustersMat.get(0, 0), (int) recordCountInClustersMat.get(0, 0));
-
-        //Creating RgRgT
-        Matrix fullRfinalTransposeMat = finalR.transpose();
-        Matrix RgRgTmat = finalR.times(fullRfinalTransposeMat);
-        //Building F1
-        //F1 = -((RgRgT)+(1/2C))
+        F[0] = new Matrix(nCols, nCols);
         for (int i = 0; i < nCols; i++) {
             for (int j = 0; j < nCols; j++) {
                 F[0].set(i, j, (RgRgTmat.get(i,j) * (-1)));
             }
         }
 
-        for (int i = 0; i < (int) recordCountInClustersMat.get(0, 0); i++) {
+        for (int i = 0; i < nCols; i++) {
             double dval = F[0].get(i, i);
             dval += (-1.0 / (2.0 * C));
             F[0].set(i, i, dval);
@@ -624,85 +693,131 @@ public class Main {
         //Done creating F1
 
         //Building F2...P
-        //F2..P = -diag((1/2C))
         for (int p = 1; p < numOfClusters; p++) {
-            F[p] = new Matrix((int) recordCountInClustersMat.get(p, 0), (int) recordCountInClustersMat.get(p, 0));
-            for (int i = 0; i < (int) recordCountInClustersMat.get(p, 0); i++) {
-                double dval = (-1.0 / (2.0 * C));
-                F[p].set(i, i, dval);
-            }
+            F[p] = new Matrix(nCols, nCols);
+//            for (int i = 0; i < (int) recordCountInClustersMat.get(p, 0); i++) {
+//                double dval = (-1.0 / (2.0 * C));
+//                F[p].set(i, i, dval);
+//            }
             Fs.add(F[p]);
         }
-        JavaRDD<Matrix> FsRDD = sc.parallelize(Fs, numOfClusters);
-        Matrix prevBetacap = new Matrix(totalData, 1);
-        prevBetacap.setMatrix(0,totalData-1,0,0,betaCapmat);
-        System.out.println("Before iteration");
+
+        JavaRDD<Matrix> FsRDD = SingleSparkContext.sc.parallelize(Fs, numOfClusters);
+        Matrix prevBetacap = new Matrix(totalDataSize, 1);
+        prevBetacap.setMatrix(0,totalDataSize-1,0,0,betaCapmat);
         for (int it = 0; it < maxIteration; it++) {
-            alphaList = sc.accumulator(new Matrix(totalData, 1), new MatrixAccumulatorParam());
-            betaList = sc.accumulator(new Matrix(totalData, 1), new MatrixAccumulatorParam());
+            System.out.println("In iteration "+it);
+            alphaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
+            betaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
             partitionCounter = 0;
             rowNumberCount = 0;
-            FsRDD.foreachPartition(new VoidFunction<Iterator<Matrix>>() {
-                public void call(Iterator<Matrix> arg0) throws Exception {
-                    Matrix F = arg0.next();
-                    int Flen = F.getRowDimension();
-                    Matrix Beta = betaBroadcast.value().getMatrix(partitionCounter, partitionCounter + Flen - 1, 0, 0);
-                    Matrix E = enBroadcast.value().getMatrix(partitionCounter, partitionCounter + Flen - 1, 0, 0);
-                    AlphaBetaHolder holder = AlphaBeta(F, Beta, E);
-                    Matrix temp = new Matrix(totalData, 1);
-                    Matrix temp2 = new Matrix(totalData, 1);
-                    temp.setMatrix(partitionCounter, partitionCounter + Flen - 1, 0, 0, holder.getAlpha());
-                    alphaList.add(temp);
-                    temp2.setMatrix(rowNumberCount, rowNumberCount + Flen - 1, 0, 0, holder.getBeta());
-                    betaList.add(temp2);
-                    partitionCounter += Flen;
-                    rowNumberCount += Flen;
+            clusterCounter = 0;
+            FsRDD.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+                Matrix partialF = arg0.next();
+//                int partialFLength = partialF.getRowDimension();
+                int partialFLength = (int)recordCountInClustersMat.get(clusterCounter, 0);
+                Matrix Beta = betaBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
+                Matrix E = enBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
+                AlphaBetaHolder holder;
+                if (clusterCounter==0){
+                    holder = AlphaBeta(partialF, Beta, E, partialFLength);
                 }
+                else {
+                    holder = AlphaBetaForOtherCluster(Beta, E);
+                }
+
+                Matrix temp = new Matrix(totalDataSize, 1);
+                Matrix temp2 = new Matrix(totalDataSize, 1);
+                temp.setMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0, holder.getAlpha());
+                alphaList.add(temp);
+                temp2.setMatrix(rowNumberCount, rowNumberCount + partialFLength - 1, 0, 0, holder.getBeta());
+                betaList.add(temp2);
+                partitionCounter += partialFLength;
+                rowNumberCount += partialFLength;
+                clusterCounter += 1;
             });
-            Matrix Betamat = Dist_QX(betaList.value());
-            for (int i = 0; i < Betamat.getRowDimension(); i++) {
-                for (int j = 0; j < Betamat.getColumnDimension(); j++) {
-                    if (Betamat.get(i, j) < 0) {
-                        Betamat.set(i, j, 0);
+
+            // Non negativity check
+            Matrix betaMatrix = Dist_QX(betaList.value());
+            for (int i = 0; i < betaMatrix.getRowDimension(); i++) {
+                for (int j = 0; j < betaMatrix.getColumnDimension(); j++) {
+                    if (betaMatrix.get(i, j) < 0) {
+                        betaMatrix.set(i, j, 0);
                     }
                 }
             }
-            betaCapmat = Dist_QtX(Betamat);
+            betaCapmat = Dist_QtX(betaMatrix);
+
             Matrix diffbeta = betaCapmat.minus(prevBetacap);
             double error = diffbeta.norm1();
-            for (int i = 0; i < totalData; i++) {
+            for (int i = 0; i < totalDataSize; i++) {
                 prevBetacap.set(i, 0, betaCapmat.get(i, 0));
             }
-            System.out.println("############################Here is iteration " + it + "###############");
-            System.out.println("this is error " + error);
-            betaBroadcast = sc.broadcast(betaCapmat);
-            if(it%5==0){
-                TestData(alphaList.value(),finalR,testdatamat,testlabelmat);
-            }
-            if (error < threshold) {
+            System.out.println("Total error " + error);
+            fileWriter.write("############################Here is iteration " + it + " ###############" + "\n");
+            fileWriter.write("this is error " + error + "\n");
+            fileWriter.flush();
+
+            betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
+//            Matrix alphaTotMatrix = alphaList.value();
+//            double tempBias = getBias(trainDataWithoutLabel, trainLabel, alphaTotMatrix);
+//            double tempBias = 0;
+//            TestData(alphaTotMatrix,finalR,testData,testLabel,tempBias);
+
+            if (error < 0.001) {
                 break;
             }
         }
-        Matrix alphatotalmat = alphaList.value();
-        TestData(alphatotalmat,finalR,testdatamat,testlabelmat);
-        //Matrix support_vectors = Dist_QX(alphatotalmat);
-        Matrix weightmat = (finalR.transpose()).times(alphatotalmat.getMatrix(0, nCols - 1, 0, 0));
-        Matrix transposeweightmat = weightmat.transpose();
-        Matrix result = transposeweightmat.times(trainDatamat.transpose());
-        for(int i=0;i<result.getColumnDimension();i++){
-            //if(result.get(i,0)<=1 && result.get(i,0)>=-1){
-            System.out.println(i+" "+result.get(0,i));
-            //}
+
+        File testDataFile = new File(testDataPath);
+        Scanner scanner = new Scanner(testDataFile);
+        Matrix testData = new Matrix(testRowCount,nCols);
+        rowNumberCount = 0;
+        while (scanner.hasNextLine()){
+            if(rowNumberCount>=testRowCount)
+                throw new CustomException("Found test data more than test row count");
+            String[] sarray = scanner.nextLine().trim().split(",");
+            double[][] values = new double[1][nCols];
+            for (int i = 0; i < nCols-1; i++) {
+                values[0][i] = Double.parseDouble(sarray[i]);
+            }
+            values[0][nCols-1] = 1.0;
+            testData.setMatrix(rowNumberCount, rowNumberCount, 0, nCols - 1, new Matrix(values));
+            rowNumberCount++;
         }
 
+        if(rowNumberCount != testRowCount)
+            throw new CustomException("Test data number is not same as test row count");
 
+        File testLabelFile = new File(testLabelPath);
+        scanner = new Scanner(testLabelFile);
+        Matrix testLabel = new Matrix(testRowCount,1);
+        rowNumberCount = 0;
+        while (scanner.hasNextLine()){
+            if(rowNumberCount >= testRowCount)
+                throw new CustomException("Found test label more than test row count");
+            String[] sarray = scanner.nextLine().trim().split(" ");
+            testLabel.set(rowNumberCount, 0, Double.parseDouble(sarray[0]));
+            rowNumberCount++;
+        }
 
-            /*final XYSeriesDemo demo = new XYSeriesDemo("Beta change vs Iteration", new Matrix(betadifara), "Amount of beta change");
-            demo.pack();
-            RefineryUtilities.centerFrameOnScreen(demo);
-            demo.setVisible(true);*/
+        if(rowNumberCount != testRowCount)
+            throw new CustomException("Test label number is not same as test row count");
 
+        Matrix alphaTotalMatrix = alphaList.value();
+//        double bias = getBias(trainDataWithoutLabel, trainLabel, alphaTotalMatrix);
+//        System.out.println("Bias is "+bias);
+        TestData(alphaTotalMatrix,finalR,testData,testLabel, 1.0);
 
+        Instant svmEnd = Instant.now();
+//        Duration timeElapsedMeka = Duration.between(mekaStart, mekaEnd);
+//        System.out.println("Time taken in meka: "+ timeElapsedMeka.toMillis() +" milliseconds");
+        Duration timeElapsedSVM = Duration.between(mekaEnd, svmEnd);
+        System.out.println("Time taken in SVM: "+ timeElapsedSVM.toMillis() +" milliseconds");
+
+        /*final XYSeriesDemo demo = new XYSeriesDemo("Beta change vs Iteration", new Matrix(betadifara), "Amount of beta change");
+        demo.pack();
+        RefineryUtilities.centerFrameOnScreen(demo);
+        demo.setVisible(true);*/
     }
-
 }
