@@ -32,6 +32,7 @@ public class Main {
     private static int testRowCount;
     private static int sparkExtraMatrixSize = 10; //For the case when data is not evenly distributed
     private static int partitionCounter = 0;
+    private static int partitionCounter2 = 0;
     private static int rowNumberCount = 0;
     private static int clusterCounter = 0;
     private static int fullIterator = 0;
@@ -51,7 +52,7 @@ public class Main {
     private static String testLabelPath = "src/main/resources/a9a/a9a_label_test_col_123.txt";
 
     private static Matrix globalReflector;
-    private static Matrix recordCountInClustersMat;
+//    private static Matrix recordCountInClustersMat;
 
     private static Accumulator<Matrix> alphaList;
     private static Accumulator<Matrix> betaList;
@@ -59,7 +60,9 @@ public class Main {
 
     private static Broadcast<Matrix> betaBroadcast;
     private static Broadcast<Matrix> enBroadcast;
-    private static JavaRDD<Matrix> localReflectors;
+//    private static JavaRDD<Matrix> localReflectors;
+    private static JavaRDD<PerClusterInfo> perClusterInfoJavaRDD;
+    private static JavaRDD<PerClusterInfo> perClusterInfoJavaRDD2;
 
     private static FileWriter fileWriter;
 
@@ -274,40 +277,90 @@ public class Main {
         return partialX;
     }
 
-    private static Matrix Dist_QtX(Matrix x){
-        xAcc.setValue(new Matrix(totalDataSize,1));
-        fullIterator = 0;
-        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
-            Matrix reflector = arg0.next();
-            int rowIncluster = reflector.getRowDimension();
-            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
-            Matrix updatedSubX = LocalQtX(reflector,subX);
-            Matrix temp = new Matrix(totalDataSize, 1);
-            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+    private static JavaRDD<PerClusterInfo> DistributedQtX(JavaRDD<PerClusterInfo> dummyperClusterInfoJavaRDD, boolean betaCalculate, boolean eCalculate) {
+//        partitionCounter = 0;
+        xAcc.setValue(new Matrix(numOfClusters*nCols,1));
+        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            PerClusterInfo clusterInfo = clusterIterator.next();
+//            System.out.println("Inside distributed qtx first "+clusterInfo.getClusterNumber());
+            Matrix temp = new Matrix(numOfClusters*nCols, 1);
+            if(eCalculate){
+                Matrix updatedE = LocalQtX(clusterInfo.getLocalReflector(), clusterInfo.getE());
+                clusterInfo.setE(updatedE);
+                temp.setMatrix(clusterInfo.getClusterNumber()*nCols, (clusterInfo.getClusterNumber()+1)*nCols-1, 0, 0, updatedE.getMatrix(0,nCols-1,0,0));
+            }
+            if(betaCalculate){
+                Matrix updatedBeta = LocalQtX(clusterInfo.getLocalReflector(), clusterInfo.getBeta());
+                clusterInfo.setBeta(updatedBeta);
+                temp.setMatrix(clusterInfo.getClusterNumber()*nCols, (clusterInfo.getClusterNumber()+1)*nCols-1, 0, 0, updatedBeta.getMatrix(0,nCols-1,0,0));
+            }
             xAcc.add(temp);
-            fullIterator += rowIncluster;
-        });
+//            partitionCounter += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(clusterInfo);
+            return new_List.iterator();
+        }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        Matrix finalX = xAcc.value();
-        Matrix partialX = new Matrix(numOfClusters*nCols,1);
-        fullIterator = 0;
-        partialIterator = 0;
-        for(int k=0;k<numOfClusters;k++){
-            Matrix temp = finalX.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
-            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
-            fullIterator += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-        Matrix updatedPartialX = GlobalQtX(partialX);
-        rowNumberCount = 0;
-        partialIterator = 0;
-        for (int k = 0; k < numOfClusters; k++) {
-            finalX.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
-            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-        return finalX;
+        JavaRDD<Integer> dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+        Matrix updatedPartialX = GlobalQtX(xAcc.value());
+
+//        partitionCounter = 0;
+        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            PerClusterInfo clusterInfo = clusterIterator.next();
+//            System.out.println("Inside distributed qtx second "+clusterInfo.getClusterNumber());
+            if(eCalculate){
+                clusterInfo.setPartialE(0,nCols-1,0,0,updatedPartialX.getMatrix(clusterInfo.getClusterNumber()*nCols,(clusterInfo.getClusterNumber()+1)*nCols-1,0,0));
+            }
+            if(betaCalculate){
+                clusterInfo.setPartialBeta(0,nCols-1,0,0,updatedPartialX.getMatrix(clusterInfo.getClusterNumber()*nCols,(clusterInfo.getClusterNumber()+1)*nCols-1,0,0));
+            }
+//            partitionCounter += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(clusterInfo);
+            return new_List.iterator();
+        }).persist(StorageLevel.MEMORY_ONLY_SER());
+
+        dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+        return dummyperClusterInfoJavaRDD;
     }
+
+//    private static Matrix Dist_QtX(Matrix x){
+//        xAcc.setValue(new Matrix(totalDataSize,1));
+//        fullIterator = 0;
+//        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+//            Matrix reflector = arg0.next();
+//            int rowIncluster = reflector.getRowDimension();
+//            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+//            Matrix updatedSubX = LocalQtX(reflector,subX);
+//            Matrix temp = new Matrix(totalDataSize, 1);
+//            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+//            xAcc.add(temp);
+//            fullIterator += rowIncluster;
+//        });
+//
+//        Matrix finalX = xAcc.value();
+//        Matrix partialX = new Matrix(numOfClusters*nCols,1);
+//        fullIterator = 0;
+//        partialIterator = 0;
+//        for(int k=0;k<numOfClusters;k++){
+//            Matrix temp = finalX.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
+//            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
+//            fullIterator += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//        Matrix updatedPartialX = GlobalQtX(partialX);
+//        rowNumberCount = 0;
+//        partialIterator = 0;
+//        for (int k = 0; k < numOfClusters; k++) {
+//            finalX.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
+//            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//        return finalX;
+//    }
 
     private static Matrix LocalQX(Matrix reflector, Matrix subX){
         int rowIncluster = subX.getRowDimension();
@@ -330,83 +383,124 @@ public class Main {
         return partialX;
     }
 
-    private static Matrix Dist_QX(Matrix x){
-        Matrix partialX = new Matrix(numOfClusters*nCols,1);
-        fullIterator = 0;
-        partialIterator = 0;
-        for(int k=0;k<numOfClusters;k++){
-            Matrix temp = x.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
-            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
-            fullIterator += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-        Matrix updatedPartialX = GlobalQX(partialX);
-        rowNumberCount = 0;
-        partialIterator = 0;
-        for (int k = 0; k < numOfClusters; k++) {
-            x.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
-            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-
-        xAcc.setValue(new Matrix(totalDataSize,1));
-        fullIterator = 0;
-        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
-            Matrix reflector = arg0.next();
-            int rowIncluster = reflector.getRowDimension();
-            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
-            Matrix updatedSubX = LocalQX(reflector,subX);
-            Matrix temp = new Matrix(totalDataSize, 1);
-            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+    private static JavaRDD<PerClusterInfo> DistributedQX(JavaRDD<PerClusterInfo> dummyperClusterInfoJavaRDD) {
+//        partitionCounter2 = 0;
+        xAcc.setValue(new Matrix(numOfClusters*nCols,1));
+//        System.out.println(partitionCounter2);
+        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+//            System.out.println(partitionCounter2);
+            PerClusterInfo clusterInfo = clusterIterator.next();
+            Matrix temp = new Matrix(numOfClusters*nCols, 1);
+            Matrix tt = clusterInfo.getBeta().getMatrix(0,nCols-1,0,0);
+//            System.out.println(partitionCounter*nCols+" "+((partitionCounter+1)*nCols-1));
+            temp.setMatrix(clusterInfo.getClusterNumber()*nCols, (clusterInfo.getClusterNumber()+1)*nCols-1, 0, 0, clusterInfo.getBeta().getMatrix(0,nCols-1,0,0));
             xAcc.add(temp);
-            fullIterator += rowIncluster;
-        });
+//            partitionCounter2 += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(clusterInfo);
+            return new_List.iterator();
+        }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        return xAcc.value();
+        JavaRDD<Integer> dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+        Matrix updatedPartialX = GlobalQX(xAcc.value());
+
+//        partitionCounter2 = 0;
+        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            PerClusterInfo clusterInfo = clusterIterator.next();
+            Matrix beta = clusterInfo.getBeta();
+            beta.setMatrix(0,nCols-1,0,0,updatedPartialX.getMatrix(clusterInfo.getClusterNumber()*nCols,(clusterInfo.getClusterNumber()+1)*nCols-1,0,0));
+            Matrix updatedBeta = LocalQX(clusterInfo.getLocalReflector(),beta);
+            clusterInfo.setBeta(updatedBeta);
+//            partitionCounter2 += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(clusterInfo);
+            return new_List.iterator();
+        }).persist(StorageLevel.MEMORY_ONLY_SER());
+
+        dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+        return dummyperClusterInfoJavaRDD;
     }
 
-    private static Matrix Dist_QX2(Matrix tempx){
-        Matrix x = new Matrix(tempx.getRowDimension(), tempx.getColumnDimension());
-        for(int i=0;i<tempx.getRowDimension();i++){
-            for(int j=0;j<tempx.getColumnDimension();j++){
-                x.set(i,j,tempx.get(i,j));
-            }
-        }
+//    private static Matrix Dist_QX(Matrix x){
+//        Matrix partialX = new Matrix(numOfClusters*nCols,1);
+//        fullIterator = 0;
+//        partialIterator = 0;
+//        for(int k=0;k<numOfClusters;k++){
+//            Matrix temp = x.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
+//            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
+//            fullIterator += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//        Matrix updatedPartialX = GlobalQX(partialX);
+//        rowNumberCount = 0;
+//        partialIterator = 0;
+//        for (int k = 0; k < numOfClusters; k++) {
+//            x.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
+//            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//
+//        xAcc.setValue(new Matrix(totalDataSize,1));
+//        fullIterator = 0;
+//        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+//            Matrix reflector = arg0.next();
+//            int rowIncluster = reflector.getRowDimension();
+//            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+//            Matrix updatedSubX = LocalQX(reflector,subX);
+//            Matrix temp = new Matrix(totalDataSize, 1);
+//            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+//            xAcc.add(temp);
+//            fullIterator += rowIncluster;
+//        });
+//
+//        return xAcc.value();
+//    }
 
-        Matrix partialX = new Matrix(numOfClusters*nCols,1);
-        fullIterator = 0;
-        partialIterator = 0;
-        for(int k=0;k<numOfClusters;k++){
-            Matrix temp = x.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
-            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
-            fullIterator += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-        Matrix updatedPartialX = GlobalQX(partialX);
-        rowNumberCount = 0;
-        partialIterator = 0;
-        for (int k = 0; k < numOfClusters; k++) {
-            x.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
-            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
-            partialIterator += nCols;
-        }
-
-        xAcc.setValue(new Matrix(totalDataSize,1));
-        fullIterator = 0;
-        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
-            Matrix reflector = arg0.next();
-            int rowIncluster = reflector.getRowDimension();
-            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
-            Matrix updatedSubX = LocalQX(reflector,subX);
-            Matrix temp = new Matrix(totalDataSize, 1);
-            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
-            xAcc.add(temp);
-            fullIterator += rowIncluster;
-        });
-
-        return xAcc.value();
-//        return new Matrix(totalDataSize,1);
-    }
+//    private static Matrix Dist_QX2(Matrix tempx){
+//        Matrix x = new Matrix(tempx.getRowDimension(), tempx.getColumnDimension());
+//        for(int i=0;i<tempx.getRowDimension();i++){
+//            for(int j=0;j<tempx.getColumnDimension();j++){
+//                x.set(i,j,tempx.get(i,j));
+//            }
+//        }
+//
+//        Matrix partialX = new Matrix(numOfClusters*nCols,1);
+//        fullIterator = 0;
+//        partialIterator = 0;
+//        for(int k=0;k<numOfClusters;k++){
+//            Matrix temp = x.getMatrix(fullIterator,fullIterator+nCols-1,0,0);
+//            partialX.setMatrix(partialIterator,partialIterator+nCols-1,0,0,temp);
+//            fullIterator += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//        Matrix updatedPartialX = GlobalQX(partialX);
+//        rowNumberCount = 0;
+//        partialIterator = 0;
+//        for (int k = 0; k < numOfClusters; k++) {
+//            x.setMatrix(rowNumberCount, rowNumberCount + nCols - 1, 0, 0, updatedPartialX.getMatrix(partialIterator, partialIterator + nCols - 1, 0, 0));
+//            rowNumberCount += (int) recordCountInClustersMat.get(k, 0);
+//            partialIterator += nCols;
+//        }
+//
+//        xAcc.setValue(new Matrix(totalDataSize,1));
+//        fullIterator = 0;
+//        localReflectors.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+//            Matrix reflector = arg0.next();
+//            int rowIncluster = reflector.getRowDimension();
+//            Matrix subX = x.getMatrix(fullIterator,fullIterator+rowIncluster-1,0,0);
+//            Matrix updatedSubX = LocalQX(reflector,subX);
+//            Matrix temp = new Matrix(totalDataSize, 1);
+//            temp.setMatrix(fullIterator, fullIterator + rowIncluster - 1, 0, 0, updatedSubX);
+//            xAcc.add(temp);
+//            fullIterator += rowIncluster;
+//        });
+//
+//        return xAcc.value();
+////        return new Matrix(totalDataSize,1);
+//    }
 
     private static void TestData(Matrix alphaTotalMatrix, Matrix finalR, Matrix testDataMatrix, Matrix testLabelMatrix, double bias) throws IOException {
         Matrix weightMatrix = (finalR.transpose()).times(alphaTotalMatrix.getMatrix(0, nCols - 1, 0, 0));
@@ -467,31 +561,31 @@ public class Main {
         return rowList;
     }
 
-    private static double getBias(Matrix trainDataWithoutLabel, Matrix trainLabel, Matrix alphaMat){
-        Matrix supportValues = Dist_QX2(alphaMat);
-//        Matrix supportValues = alphaMat;
-        List<Integer> supportValuesIndexList = new ArrayList<>();
-        List<Double> supportValuesList = new ArrayList<>();
-        for(int i=0;i<totalDataSize;i++){
-            if (supportValues.get(i,0)>0.001){
-                supportValuesIndexList.add(i);
-                supportValuesList.add(supportValues.get(i,0));
-            }
-        }
-
-        Matrix Xk = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(0), supportValuesIndexList.get(0), 0, nCols-1);
-        int svCount = supportValuesIndexList.size();
-        double biasLocal = 0;
-        for(int i=0;i<svCount;i++){
-            Matrix temp = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(i), supportValuesIndexList.get(i), 0, nCols-1);
-            double scalerValue = temp.times(Xk.transpose()).get(0,0);
-            biasLocal += supportValuesList.get(i)*trainLabel.get(supportValuesIndexList.get(i), 0)*scalerValue;
-        }
-
-        double bias = trainLabel.get(supportValuesIndexList.get(0), 0) - biasLocal;
-        return bias;
-//        return 0.1;
-    }
+//    private static double getBias(Matrix trainDataWithoutLabel, Matrix trainLabel, Matrix alphaMat){
+//        Matrix supportValues = Dist_QX2(alphaMat);
+////        Matrix supportValues = alphaMat;
+//        List<Integer> supportValuesIndexList = new ArrayList<>();
+//        List<Double> supportValuesList = new ArrayList<>();
+//        for(int i=0;i<totalDataSize;i++){
+//            if (supportValues.get(i,0)>0.001){
+//                supportValuesIndexList.add(i);
+//                supportValuesList.add(supportValues.get(i,0));
+//            }
+//        }
+//
+//        Matrix Xk = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(0), supportValuesIndexList.get(0), 0, nCols-1);
+//        int svCount = supportValuesIndexList.size();
+//        double biasLocal = 0;
+//        for(int i=0;i<svCount;i++){
+//            Matrix temp = trainDataWithoutLabel.getMatrix(supportValuesIndexList.get(i), supportValuesIndexList.get(i), 0, nCols-1);
+//            double scalerValue = temp.times(Xk.transpose()).get(0,0);
+//            biasLocal += supportValuesList.get(i)*trainLabel.get(supportValuesIndexList.get(i), 0)*scalerValue;
+//        }
+//
+//        double bias = trainLabel.get(supportValuesIndexList.get(0), 0) - biasLocal;
+//        return bias;
+////        return 0.1;
+//    }
 
     public static void main(String[] args) throws IOException, CustomException, JepException {
         // Initialization
@@ -599,7 +693,7 @@ public class Main {
         }*/
 
 
-        totalDataSize = 26048;
+        totalDataSize = 1000;
         testRowCount = 6513;
 
         JavaRDD<Matrix> trainingDataRDD = SingleSparkContext.sc.textFile(trainDataPath, numOfClusters)
@@ -615,12 +709,12 @@ public class Main {
 
         // When reading data from text file, generally data count in all clusters does not become same. So we need an
         // accumulator to store which clusters have how many records.
-        Accumulator<Matrix> recordCountInClusters = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
+//        Accumulator<Matrix> recordCountInClusters = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
 
         //Accumulator to gather partial R
         Accumulator<Matrix> rGatherAcc = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters * nCols, nCols), new MatrixAccumulatorParam());
         partitionCounter = 0;
-        localReflectors = trainingDataRDD.mapPartitions(matrixIterator -> {
+        perClusterInfoJavaRDD = trainingDataRDD.mapPartitions(matrixIterator -> {
             //As data is not evenly distributed, we are making matrix with slightly larger size.
             Matrix partitionedMatrix = new Matrix((totalDataSize / numOfClusters) + sparkExtraMatrixSize, nCols);
             int currentRow = 0;
@@ -641,21 +735,27 @@ public class Main {
             temp.setMatrix(partitionCounter * nCols, (partitionCounter+1) * nCols - 1, 0, nCols - 1, qrd.getR());
             rGatherAcc.add(temp);
 
-            // Generating matrix for record count in each clusters.
-            Matrix temp2 = new Matrix(numOfClusters, 1);
-            temp2.set(partitionCounter, 0, currentRow);
-            recordCountInClusters.add(temp2);
-            partitionCounter += 1;
+//            // Generating matrix for record count in each clusters.
+//            Matrix temp2 = new Matrix(numOfClusters, 1);
+//            temp2.set(partitionCounter, 0, currentRow);
+//            recordCountInClusters.add(temp2);
+//            System.out.println("Inside training data rdd " + partitionCounter);
 
             //Returning generated Reflector from each cluster to a RDD
             System.out.println("Gathering partial reflectors in cluster "+partitionCounter);
-            List<Matrix> new_List = new ArrayList();
-            new_List.add(qrd.getReflector());
+
+            PerClusterInfo perClusterInfo = new PerClusterInfo();
+            perClusterInfo.setLocalReflector(qrd.getReflector());
+            perClusterInfo.setDataCount(currentRow);
+            perClusterInfo.setClusterNumber(partitionCounter);
+            partitionCounter += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(perClusterInfo);
             return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
         //Spark uses lazy waiting for mapPartitions method. So we are using this codes to compute QReflectors early
-        JavaRDD<Integer> dummyMap = localReflectors.map((Function<Matrix, Integer>) s -> 0);
+        JavaRDD<Integer> dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
 
         //Generating final R and final R inverse.
@@ -663,111 +763,253 @@ public class Main {
         QRHolder qrHolder = HouseHolderDecomposition(rGatherMat);
         globalReflector = qrHolder.getReflector();
         Matrix finalR = qrHolder.getR();
-        recordCountInClustersMat = recordCountInClusters.value();
-        System.out.println("QR decomposition complete");
-
-        //Initializing Beta matrix in 0th iteration
-        Matrix betaCapmat = new Matrix(totalDataSize,1,1.0);
-        betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
-
-        Matrix Ecap = Dist_QtX(new Matrix(totalDataSize,1,-1.0));
-        enBroadcast = SingleSparkContext.sc.broadcast(Ecap);
+//        recordCountInClustersMat = recordCountInClusters.value();
         //Creating RgRgT
         Matrix RgRgTmat = finalR.times(finalR.transpose());
-        List<Matrix> Fs = new ArrayList<>();
-        //Initializing F matrix
-        Matrix[] F = new Matrix[numOfClusters];
-        F[0] = new Matrix(nCols, nCols);
-        for (int i = 0; i < nCols; i++) {
-            for (int j = 0; j < nCols; j++) {
-                F[0].set(i, j, (RgRgTmat.get(i,j) * (-1)));
-            }
-        }
+        System.out.println("QR decomposition complete");
 
-        for (int i = 0; i < nCols; i++) {
-            double dval = F[0].get(i, i);
-            dval += (-1.0 / (2.0 * C));
-            F[0].set(i, i, dval);
-        }
-        Fs.add(F[0]);
-        //Done creating F1
-
-        //Building F2...P
-        for (int p = 1; p < numOfClusters; p++) {
-            F[p] = new Matrix(nCols, nCols);
-//            for (int i = 0; i < (int) recordCountInClustersMat.get(p, 0); i++) {
-//                double dval = (-1.0 / (2.0 * C));
-//                F[p].set(i, i, dval);
-//            }
-            Fs.add(F[p]);
-        }
-
-        JavaRDD<Matrix> FsRDD = SingleSparkContext.sc.parallelize(Fs, numOfClusters);
-        Matrix prevBetacap = new Matrix(totalDataSize, 1);
-        prevBetacap.setMatrix(0,totalDataSize-1,0,0,betaCapmat);
-        for (int it = 0; it < maxIteration; it++) {
-            System.out.println("In iteration "+it);
-            alphaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
-            betaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
-            partitionCounter = 0;
-            rowNumberCount = 0;
-            clusterCounter = 0;
-            FsRDD.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
-                Matrix partialF = arg0.next();
-//                int partialFLength = partialF.getRowDimension();
-                int partialFLength = (int)recordCountInClustersMat.get(clusterCounter, 0);
-                Matrix Beta = betaBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
-                Matrix E = enBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
-                AlphaBetaHolder holder;
-                if (clusterCounter==0){
-                    holder = AlphaBeta(partialF, Beta, E, partialFLength);
-                }
-                else {
-                    holder = AlphaBetaForOtherCluster(Beta, E);
-                }
-
-                Matrix temp = new Matrix(totalDataSize, 1);
-                Matrix temp2 = new Matrix(totalDataSize, 1);
-                temp.setMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0, holder.getAlpha());
-                alphaList.add(temp);
-                temp2.setMatrix(rowNumberCount, rowNumberCount + partialFLength - 1, 0, 0, holder.getBeta());
-                betaList.add(temp2);
-                partitionCounter += partialFLength;
-                rowNumberCount += partialFLength;
-                clusterCounter += 1;
-            });
-
-            // Non negativity check
-            Matrix betaMatrix = Dist_QX(betaList.value());
-            for (int i = 0; i < betaMatrix.getRowDimension(); i++) {
-                for (int j = 0; j < betaMatrix.getColumnDimension(); j++) {
-                    if (betaMatrix.get(i, j) < 0) {
-                        betaMatrix.set(i, j, 0);
+//        partitionCounter = 0;
+        perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            PerClusterInfo clusterInfo = clusterIterator.next();
+//            System.out.println("Inside creation of F "+clusterInfo.getClusterNumber());
+            if(clusterInfo.getClusterNumber()==0){
+                Matrix F = new Matrix(nCols, nCols);
+                for (int i = 0; i < nCols; i++) {
+                    for (int j = 0; j < nCols; j++) {
+                        F.set(i, j, (RgRgTmat.get(i,j) * (-1)));
                     }
                 }
+
+                for (int i = 0; i < nCols; i++) {
+                    double dval = F.get(i, i);
+                    dval += (-1.0 / (2.0 * C));
+                    F.set(i, i, dval);
+                }
+                clusterInfo.setF(F);
             }
-            betaCapmat = Dist_QtX(betaMatrix);
 
-            Matrix diffbeta = betaCapmat.minus(prevBetacap);
-            double error = diffbeta.norm1();
-            for (int i = 0; i < totalDataSize; i++) {
-                prevBetacap.set(i, 0, betaCapmat.get(i, 0));
+            clusterInfo.setBeta(new Matrix(clusterInfo.getDataCount(),1,1.0));
+            clusterInfo.setPrevBeta(new Matrix(clusterInfo.getDataCount(),1,1.0));
+            clusterInfo.setE(new Matrix(clusterInfo.getDataCount(),1,-1.0));
+//            partitionCounter += 1;
+            List<PerClusterInfo> new_List = new ArrayList();
+            new_List.add(clusterInfo);
+            return new_List.iterator();
+        }).persist(StorageLevel.MEMORY_ONLY_SER());
+
+//        perClusterInfoJavaRDD.foreachPartition(clusterIterator -> {
+//            PerClusterInfo clusterInfo = clusterIterator.next();
+//
+//            print(clusterInfo.getE());
+////            List<PerClusterInfo> new_List = new ArrayList();
+////            new_List.add(clusterInfo);
+////            return new_List.iterator();
+//        });
+
+        dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+        perClusterInfoJavaRDD = DistributedQtX(perClusterInfoJavaRDD, false, true);
+
+        for(int it = 0;it<maxIteration;it++){
+//            partitionCounter = 0;
+//            System.out.println("Partition number "+perClusterInfoJavaRDD.getNumPartitions());
+            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+                PerClusterInfo clusterInfo = clusterIterator.next();
+                System.out.println("Inside alpha beta calculation "+clusterInfo.getClusterNumber());
+                AlphaBetaHolder holder;
+                if (clusterInfo.getClusterNumber()==0){
+                    holder = AlphaBeta(clusterInfo.getF(), clusterInfo.getBeta(), clusterInfo.getE(), clusterInfo.getDataCount());
+                }
+                else {
+                    holder = AlphaBetaForOtherCluster(clusterInfo.getBeta(), clusterInfo.getE());
+                }
+                clusterInfo.setAlphaCap(holder.getAlpha());
+                clusterInfo.setBeta(holder.getBeta());
+
+//                partitionCounter += 1;
+                List<PerClusterInfo> new_List = new ArrayList();
+                new_List.add(clusterInfo);
+                return new_List.iterator();
+            });
+
+            dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+            dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+            perClusterInfoJavaRDD = DistributedQX(perClusterInfoJavaRDD);
+
+            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+                PerClusterInfo clusterInfo = clusterIterator.next();
+                System.out.println("Inside non negativity check "+clusterInfo.getClusterNumber());
+                Matrix beta = clusterInfo.getBeta();
+                for(int i=0;i<clusterInfo.getDataCount();i++){
+                    if(beta.get(i,0)<0){
+                        beta.set(i,0,0);
+                    }
+                }
+                clusterInfo.setBeta(beta);
+                List<PerClusterInfo> new_List = new ArrayList();
+                new_List.add(clusterInfo);
+                return new_List.iterator();
+            });
+
+            dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+            dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+            perClusterInfoJavaRDD = DistributedQtX(perClusterInfoJavaRDD, true, false);
+
+//            partitionCounter = 0;
+            Accumulator<Matrix> errorAccumulator = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
+            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+                PerClusterInfo clusterInfo = clusterIterator.next();
+//                System.out.println("Inside error calculation "+clusterInfo.getClusterNumber());
+                Matrix diffbeta = clusterInfo.getBeta().minus(clusterInfo.getPrevBeta());
+                double error = diffbeta.norm1();
+                Matrix temp = new Matrix(numOfClusters,1);
+                temp.set(clusterInfo.getClusterNumber(),0,error);
+                errorAccumulator.add(temp);
+                clusterInfo.copyBetaToPrevBeta(clusterInfo.getBeta());
+//                partitionCounter += 1;
+                List<PerClusterInfo> new_List = new ArrayList();
+                new_List.add(clusterInfo);
+                return new_List.iterator();
+            });
+
+            dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+            dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+
+            Matrix errorMatrix = errorAccumulator.value();
+            double totalError = 0;
+            for(int i=0;i<numOfClusters;i++){
+                totalError+=errorMatrix.get(i,0);
             }
-            System.out.println("Total error " + error);
-            fileWriter.write("############################Here is iteration " + it + " ###############" + "\n");
-            fileWriter.write("this is error " + error + "\n");
-            fileWriter.flush();
-
-            betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
-//            Matrix alphaTotMatrix = alphaList.value();
-//            double tempBias = getBias(trainDataWithoutLabel, trainLabel, alphaTotMatrix);
-//            double tempBias = 0;
-//            TestData(alphaTotMatrix,finalR,testData,testLabel,tempBias);
-
-            if (error < 0.001) {
+            System.out.println("In iteration "+it);
+            System.out.println("Total error " + totalError);
+            if (totalError < 0.001) {
                 break;
             }
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//        //Initializing Beta matrix in 0th iteration
+//        Matrix betaCapmat = new Matrix(totalDataSize,1,1.0);
+//        betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
+//
+//        Matrix Ecap = Dist_QtX(new Matrix(totalDataSize,1,-1.0));
+//        enBroadcast = SingleSparkContext.sc.broadcast(Ecap);
+//
+//        List<Matrix> Fs = new ArrayList<>();
+//        //Initializing F matrix
+//        Matrix[] F = new Matrix[numOfClusters];
+//        F[0] = new Matrix(nCols, nCols);
+//        for (int i = 0; i < nCols; i++) {
+//            for (int j = 0; j < nCols; j++) {
+//                F[0].set(i, j, (RgRgTmat.get(i,j) * (-1)));
+//            }
+//        }
+//
+//        for (int i = 0; i < nCols; i++) {
+//            double dval = F[0].get(i, i);
+//            dval += (-1.0 / (2.0 * C));
+//            F[0].set(i, i, dval);
+//        }
+//        Fs.add(F[0]);
+//        //Done creating F1
+//
+//        //Building F2...P
+//        for (int p = 1; p < numOfClusters; p++) {
+//            F[p] = new Matrix(nCols, nCols);
+////            for (int i = 0; i < (int) recordCountInClustersMat.get(p, 0); i++) {
+////                double dval = (-1.0 / (2.0 * C));
+////                F[p].set(i, i, dval);
+////            }
+//            Fs.add(F[p]);
+//        }
+
+//        JavaRDD<Matrix> FsRDD = SingleSparkContext.sc.parallelize(Fs, numOfClusters);
+//        Matrix prevBetacap = new Matrix(totalDataSize, 1);
+//        prevBetacap.setMatrix(0,totalDataSize-1,0,0,betaCapmat);
+//        for (int it = 0; it < maxIteration; it++) {
+//            System.out.println("In iteration "+it);
+//            alphaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
+//            betaList = SingleSparkContext.sc.accumulator(new Matrix(totalDataSize, 1), new MatrixAccumulatorParam());
+//            partitionCounter = 0;
+//            rowNumberCount = 0;
+//            clusterCounter = 0;
+//            FsRDD.foreachPartition((VoidFunction<Iterator<Matrix>>) arg0 -> {
+//                Matrix partialF = arg0.next();
+////                int partialFLength = partialF.getRowDimension();
+//                int partialFLength = (int)recordCountInClustersMat.get(clusterCounter, 0);
+//                Matrix Beta = betaBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
+//                Matrix E = enBroadcast.value().getMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0);
+//                AlphaBetaHolder holder;
+//                if (clusterCounter==0){
+//                    holder = AlphaBeta(partialF, Beta, E, partialFLength);
+//                }
+//                else {
+//                    holder = AlphaBetaForOtherCluster(Beta, E);
+//                }
+//
+//                Matrix temp = new Matrix(totalDataSize, 1);
+//                Matrix temp2 = new Matrix(totalDataSize, 1);
+//                temp.setMatrix(partitionCounter, partitionCounter + partialFLength - 1, 0, 0, holder.getAlpha());
+//                alphaList.add(temp);
+//                temp2.setMatrix(rowNumberCount, rowNumberCount + partialFLength - 1, 0, 0, holder.getBeta());
+//                betaList.add(temp2);
+//                partitionCounter += partialFLength;
+//                rowNumberCount += partialFLength;
+//                clusterCounter += 1;
+//            });
+//
+//            // Non negativity check
+//            Matrix betaMatrix = Dist_QX(betaList.value());
+//            for (int i = 0; i < betaMatrix.getRowDimension(); i++) {
+//                for (int j = 0; j < betaMatrix.getColumnDimension(); j++) {
+//                    if (betaMatrix.get(i, j) < 0) {
+//                        betaMatrix.set(i, j, 0);
+//                    }
+//                }
+//            }
+//            betaCapmat = Dist_QtX(betaMatrix);
+//
+//            Matrix diffbeta = betaCapmat.minus(prevBetacap);
+//            double error = diffbeta.norm1();
+//            for (int i = 0; i < totalDataSize; i++) {
+//                prevBetacap.set(i, 0, betaCapmat.get(i, 0));
+//            }
+//            System.out.println("Total error " + error);
+//            fileWriter.write("############################Here is iteration " + it + " ###############" + "\n");
+//            fileWriter.write("this is error " + error + "\n");
+//            fileWriter.flush();
+//
+//            betaBroadcast = SingleSparkContext.sc.broadcast(betaCapmat);
+////            Matrix alphaTotMatrix = alphaList.value();
+////            double tempBias = getBias(trainDataWithoutLabel, trainLabel, alphaTotMatrix);
+////            double tempBias = 0;
+////            TestData(alphaTotMatrix,finalR,testData,testLabel,tempBias);
+//
+//            if (error < 0.001) {
+//                break;
+//            }
+//        }
 
         File testDataFile = new File(testDataPath);
         Scanner scanner = new Scanner(testDataFile);
