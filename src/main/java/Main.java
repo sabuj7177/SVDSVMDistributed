@@ -1,14 +1,11 @@
 import Jama.Matrix;
 import jep.JepException;
-import jep.MainInterpreter;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.Accumulator;
 import org.apache.spark.api.java.JavaRDD;
-import org.apache.spark.api.java.function.FlatMapFunction;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
-import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.storage.StorageLevel;
 
@@ -18,7 +15,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 
@@ -277,10 +273,10 @@ public class Main {
         return partialX;
     }
 
-    private static JavaRDD<PerClusterInfo> DistributedQtX(JavaRDD<PerClusterInfo> dummyperClusterInfoJavaRDD, boolean betaCalculate, boolean eCalculate) {
+    private static void DistributedQtX(boolean betaCalculate, boolean eCalculate) {
 //        partitionCounter = 0;
         xAcc.setValue(new Matrix(numOfClusters*nCols,1));
-        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+        perClusterInfoJavaRDD = perClusterInfoJavaRDD2.mapPartitions(clusterIterator -> {
             PerClusterInfo clusterInfo = clusterIterator.next();
 //            System.out.println("Inside distributed qtx first "+clusterInfo.getClusterNumber());
             Matrix temp = new Matrix(numOfClusters*nCols, 1);
@@ -301,13 +297,14 @@ public class Main {
             return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        JavaRDD<Integer> dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        JavaRDD<Integer> dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+        perClusterInfoJavaRDD2.unpersist();
 
         Matrix updatedPartialX = GlobalQtX(xAcc.value());
 
 //        partitionCounter = 0;
-        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+        perClusterInfoJavaRDD2 = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
             PerClusterInfo clusterInfo = clusterIterator.next();
 //            System.out.println("Inside distributed qtx second "+clusterInfo.getClusterNumber());
             if(eCalculate){
@@ -322,9 +319,9 @@ public class Main {
             return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap = perClusterInfoJavaRDD2.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
-        return dummyperClusterInfoJavaRDD;
+        perClusterInfoJavaRDD.unpersist();
     }
 
 //    private static Matrix Dist_QtX(Matrix x){
@@ -383,11 +380,11 @@ public class Main {
         return partialX;
     }
 
-    private static JavaRDD<PerClusterInfo> DistributedQX(JavaRDD<PerClusterInfo> dummyperClusterInfoJavaRDD) {
+    private static void DistributedQX() {
 //        partitionCounter2 = 0;
         xAcc.setValue(new Matrix(numOfClusters*nCols,1));
 //        System.out.println(partitionCounter2);
-        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+        perClusterInfoJavaRDD2 = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
 //            System.out.println(partitionCounter2);
             PerClusterInfo clusterInfo = clusterIterator.next();
             Matrix temp = new Matrix(numOfClusters*nCols, 1);
@@ -401,13 +398,14 @@ public class Main {
             return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        JavaRDD<Integer> dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        JavaRDD<Integer> dummyMap = perClusterInfoJavaRDD2.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+        perClusterInfoJavaRDD.unpersist();
 
         Matrix updatedPartialX = GlobalQX(xAcc.value());
 
 //        partitionCounter2 = 0;
-        dummyperClusterInfoJavaRDD = dummyperClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+        perClusterInfoJavaRDD = perClusterInfoJavaRDD2.mapPartitions(clusterIterator -> {
             PerClusterInfo clusterInfo = clusterIterator.next();
             Matrix beta = clusterInfo.getBeta();
             beta.setMatrix(0,nCols-1,0,0,updatedPartialX.getMatrix(clusterInfo.getClusterNumber()*nCols,(clusterInfo.getClusterNumber()+1)*nCols-1,0,0));
@@ -419,9 +417,9 @@ public class Main {
             return new_List.iterator();
         }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-        dummyMap = dummyperClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
-        return dummyperClusterInfoJavaRDD;
+        perClusterInfoJavaRDD2.unpersist();
     }
 
 //    private static Matrix Dist_QX(Matrix x){
@@ -693,7 +691,7 @@ public class Main {
         }*/
 
 
-        totalDataSize = 1000;
+        totalDataSize = 26048;
         testRowCount = 6513;
 
         JavaRDD<Matrix> trainingDataRDD = SingleSparkContext.sc.textFile(trainDataPath, numOfClusters)
@@ -769,7 +767,7 @@ public class Main {
         System.out.println("QR decomposition complete");
 
 //        partitionCounter = 0;
-        perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+        perClusterInfoJavaRDD2 = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
             PerClusterInfo clusterInfo = clusterIterator.next();
 //            System.out.println("Inside creation of F "+clusterInfo.getClusterNumber());
             if(clusterInfo.getClusterNumber()==0){
@@ -806,17 +804,19 @@ public class Main {
 ////            return new_List.iterator();
 //        });
 
-        dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+        dummyMap = perClusterInfoJavaRDD2.map((Function<PerClusterInfo, Integer>) s -> 0);
         dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
 
-        perClusterInfoJavaRDD = DistributedQtX(perClusterInfoJavaRDD, false, true);
+        perClusterInfoJavaRDD.unpersist();
+
+        DistributedQtX(false, true);
 
         for(int it = 0;it<maxIteration;it++){
 //            partitionCounter = 0;
 //            System.out.println("Partition number "+perClusterInfoJavaRDD.getNumPartitions());
-            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            perClusterInfoJavaRDD = perClusterInfoJavaRDD2.mapPartitions(clusterIterator -> {
                 PerClusterInfo clusterInfo = clusterIterator.next();
-                System.out.println("Inside alpha beta calculation "+clusterInfo.getClusterNumber());
+//                System.out.println("Inside alpha beta calculation "+clusterInfo.getClusterNumber());
                 AlphaBetaHolder holder;
                 if (clusterInfo.getClusterNumber()==0){
                     holder = AlphaBeta(clusterInfo.getF(), clusterInfo.getBeta(), clusterInfo.getE(), clusterInfo.getDataCount());
@@ -831,16 +831,17 @@ public class Main {
                 List<PerClusterInfo> new_List = new ArrayList();
                 new_List.add(clusterInfo);
                 return new_List.iterator();
-            });
+            }).persist(StorageLevel.MEMORY_ONLY_SER());
 
             dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
             dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+            perClusterInfoJavaRDD2.unpersist();
 
-            perClusterInfoJavaRDD = DistributedQX(perClusterInfoJavaRDD);
+            DistributedQX();
 
-            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            perClusterInfoJavaRDD2 = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
                 PerClusterInfo clusterInfo = clusterIterator.next();
-                System.out.println("Inside non negativity check "+clusterInfo.getClusterNumber());
+//                System.out.println("Inside non negativity check "+clusterInfo.getClusterNumber());
                 Matrix beta = clusterInfo.getBeta();
                 for(int i=0;i<clusterInfo.getDataCount();i++){
                     if(beta.get(i,0)<0){
@@ -851,16 +852,17 @@ public class Main {
                 List<PerClusterInfo> new_List = new ArrayList();
                 new_List.add(clusterInfo);
                 return new_List.iterator();
-            });
+            }).persist(StorageLevel.MEMORY_ONLY_SER());
 
-            dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
+            dummyMap = perClusterInfoJavaRDD2.map((Function<PerClusterInfo, Integer>) s -> 0);
             dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+            perClusterInfoJavaRDD.unpersist();
 
-            perClusterInfoJavaRDD = DistributedQtX(perClusterInfoJavaRDD, true, false);
+            DistributedQtX(true, false);
 
 //            partitionCounter = 0;
             Accumulator<Matrix> errorAccumulator = SingleSparkContext.sc.accumulator(new Matrix(numOfClusters, 1), new MatrixAccumulatorParam());
-            perClusterInfoJavaRDD = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+            perClusterInfoJavaRDD = perClusterInfoJavaRDD2.mapPartitions(clusterIterator -> {
                 PerClusterInfo clusterInfo = clusterIterator.next();
 //                System.out.println("Inside error calculation "+clusterInfo.getClusterNumber());
                 Matrix diffbeta = clusterInfo.getBeta().minus(clusterInfo.getPrevBeta());
@@ -873,10 +875,22 @@ public class Main {
                 List<PerClusterInfo> new_List = new ArrayList();
                 new_List.add(clusterInfo);
                 return new_List.iterator();
-            });
+            }).persist(StorageLevel.MEMORY_ONLY_SER());
 
             dummyMap = perClusterInfoJavaRDD.map((Function<PerClusterInfo, Integer>) s -> 0);
             dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+            perClusterInfoJavaRDD2.unpersist();
+
+            perClusterInfoJavaRDD2 = perClusterInfoJavaRDD.mapPartitions(clusterIterator -> {
+                PerClusterInfo clusterInfo = clusterIterator.next();
+                List<PerClusterInfo> new_List = new ArrayList();
+                new_List.add(clusterInfo);
+                return new_List.iterator();
+            }).persist(StorageLevel.MEMORY_ONLY_SER());
+
+            dummyMap = perClusterInfoJavaRDD2.map((Function<PerClusterInfo, Integer>) s -> 0);
+            dummyMap.reduce((Function2<Integer, Integer, Integer>) Integer::sum);
+            perClusterInfoJavaRDD.unpersist();
 
             Matrix errorMatrix = errorAccumulator.value();
             double totalError = 0;
